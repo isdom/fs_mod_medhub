@@ -363,7 +363,8 @@ public:
                             "result":"今年双十一"
                         }
                     } */
-                    onTranscriptionResultChanged(m_asr_ctx, asr_result["payload"]["result"]);
+                    std::string result = asr_result["playload"]["result"];
+                    onTranscriptionResultChanged(m_asr_ctx, result);
                 } else if (asr_result["header"]["name"] == "SentenceEnd") {
                     /* SentenceEnd 事件
                     {
