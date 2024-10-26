@@ -363,7 +363,7 @@ public:
                             "result":"今年双十一"
                         }
                     } */
-                    std::string result = asr_result["playload"]["result"];
+                    std::string result = asr_result["payload"]["result"];
                     onTranscriptionResultChanged(m_asr_ctx, result);
                 } else if (asr_result["header"]["name"] == "SentenceEnd") {
                     /* SentenceEnd 事件
@@ -378,12 +378,12 @@ public:
                             "result": "今年双十一我要买电视"
                         }
                     } */
-                    std::string result = asr_result["playload"]["result"];
+                    std::string result = asr_result["payload"]["result"];
                     asr_sentence_result_t asr_sentence_result = {
-                            asr_result["playload"]["index"],
-                            asr_result["playload"]["begin_time"],
-                            asr_result["playload"]["time"],
-                            asr_result["playload"]["confidence"],
+                            asr_result["payload"]["index"],
+                            asr_result["payload"]["begin_time"],
+                            asr_result["payload"]["time"],
+                            asr_result["payload"]["confidence"],
                             result.c_str()
                     };
                     onSentenceEnd(m_asr_ctx, &asr_sentence_result);
