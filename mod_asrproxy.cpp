@@ -861,7 +861,7 @@ static void stop_asrproxy(asrproxy_context_t *ctx) {
     switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
     if (ctx->client) {
         if (asrproxy_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "try to stop fun asr on channel: %s\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "try to stop asrproxy on channel: %s\n",
                               switch_channel_get_name(channel));
         }
         ctx->client->stop();
@@ -869,13 +869,13 @@ static void stop_asrproxy(asrproxy_context_t *ctx) {
         delete ctx->client;
         ctx->client = nullptr;
         if (asrproxy_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop fun asr and client is released on channel: %s\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop asrproxy and client is released on channel: %s\n",
                               switch_channel_get_name(channel));
         }
     } else {
         if (asrproxy_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                              "fun asr has already stopped and released on channel:%s\n",
+                              "asrproxy has already stopped and released on channel:%s\n",
                               switch_channel_get_name(channel));
         }
     }
