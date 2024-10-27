@@ -8,7 +8,7 @@ CLI_STRIP=$(CLI_CC_PRE)strip
 
 
 CFLAGS += -shared -fPIC -O2 -Wall
-SER_SRCS=mod_asrproxy.cpp
+SER_SRCS=mod_asrhub.cpp
 
 SDK_LIBS=-lpthread -ldl -lanl -D_GLIBCXX_USE_CXX11_ABI=0
 SDK_INCLUDE=-I./third_party/websocket -I./third_party/asio/asio/include -I./third_party/json/include
@@ -16,7 +16,7 @@ SDK_INCLUDE=-I./third_party/websocket -I./third_party/asio/asio/include -I./thir
 FREESWITCH_LIBS=-L/usr/local/freeswitch/lib -lfreeswitch
 FREESWITCH_INCLUDE=-I/usr/local/freeswitch/include/freeswitch
 
-TARGET_SER=mod_asrproxy.so
+TARGET_SER=mod_asrhub.so
 
 SER_OBJS=$(SER_SRCS:.c=.o)
 
