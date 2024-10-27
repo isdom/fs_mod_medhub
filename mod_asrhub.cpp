@@ -15,18 +15,18 @@
 
 typedef struct {
     bool _debug;
-    switch_atomic_t asrproxy_concurrent_cnt;
-} asrproxy_global_t;
+    switch_atomic_t asrhub_concurrent_cnt;
+} asrhub_global_t;
 
-asrproxy_global_t *asrproxy_globals;
+asrhub_global_t *asrhub_globals;
 
 template<typename T>
 class WebsocketClient;
 
 #if ENABLE_WSS
-typedef WebsocketClient<websocketpp::config::asio_tls_client> asrproxy_client;
+typedef WebsocketClient<websocketpp::config::asio_tls_client> asrhub_client;
 #else
-typedef WebsocketClient<websocketpp::config::asio_client> asrproxy_client;
+typedef WebsocketClient<websocketpp::config::asio_client> asrhub_client;
 #endif
 
 // public declare
@@ -74,24 +74,24 @@ typedef struct {
 
 typedef struct {
     switch_core_session_t   *session;
-    asrproxy_client         *client;
+    asrhub_client         *client;
     int started;
     int stopped;
     int starting;
     switch_mutex_t          *mutex;
     switch_audio_resampler_t *re_sampler;
-char                        *asrproxy_url;
+char                        *asrhub_url;
     asr_callback_t          *asr_callback;
-} asrproxy_context_t;
+} asrhub_context_t;
 
 /**
  * 识别启动回调函数
  *
  * @param ctx
  */
-void onTranscriptionStarted(asrproxy_context_t *ctx) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionStarted: asrproxy\n");
+void onTranscriptionStarted(asrhub_context_t *ctx) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionStarted: asrhub\n");
     }
     switch_mutex_lock(ctx->mutex);
     ctx->started = 1;
@@ -99,7 +99,7 @@ void onTranscriptionStarted(asrproxy_context_t *ctx) {
     switch_mutex_unlock(ctx->mutex);
 
     if (ctx->asr_callback) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionStarted: call on_asr_started_func %p\n", ctx->asr_callback->on_asr_started_func);
         }
         ctx->asr_callback->on_asr_started_func(ctx->asr_callback->asr_caller);
@@ -113,9 +113,9 @@ void onTranscriptionStarted(asrproxy_context_t *ctx) {
  *
  * @param ctx
  */
-void onSentenceBegin(asrproxy_context_t *ctx) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceBegin: asrproxy\n");
+void onSentenceBegin(asrhub_context_t *ctx) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceBegin: asrhub\n");
     }
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
@@ -128,12 +128,12 @@ void onSentenceBegin(asrproxy_context_t *ctx) {
  * @param ctx
  * @param text
  */
-void onSentenceEnd(asrproxy_context_t *ctx, asr_sentence_result_t *asr_sentence_result) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: asrproxy\n");
+void onSentenceEnd(asrhub_context_t *ctx, asr_sentence_result_t *asr_sentence_result) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: asrhub\n");
     }
     if (ctx->asr_callback) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: call on_asr_sentence_end_func %p\n", ctx->asr_callback->on_asr_sentence_end_func);
         }
         ctx->asr_callback->on_asr_sentence_end_func(ctx->asr_callback->asr_caller, asr_sentence_result);
@@ -148,12 +148,12 @@ void onSentenceEnd(asrproxy_context_t *ctx, asr_sentence_result_t *asr_sentence_
  * @param ctx
  * @param text
  */
-void onTranscriptionResultChanged(asrproxy_context_t *ctx, const std::string &text) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionResultChanged: asrproxy\n");
+void onTranscriptionResultChanged(asrhub_context_t *ctx, const std::string &text) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionResultChanged: asrhub\n");
     }
     if (ctx->asr_callback) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTranscriptionResultChanged: call on_asr_result_changed_func %p\n", ctx->asr_callback->on_asr_result_changed_func);
         }
         asr_sentence_result_t asr_sentence_result = {
@@ -174,9 +174,9 @@ void onTranscriptionResultChanged(asrproxy_context_t *ctx, const std::string &te
  *
  * @param ctx
  */
-void onTranscriptionCompleted(asrproxy_context_t *ctx) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTranscriptionCompleted: asrproxy\n");
+void onTranscriptionCompleted(asrhub_context_t *ctx) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTranscriptionCompleted: asrhub\n");
     }
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
@@ -188,9 +188,9 @@ void onTranscriptionCompleted(asrproxy_context_t *ctx) {
  *
  * @param ctx
  */
-void onTaskFailed(asrproxy_context_t *ctx) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTaskFailed: asrproxy\n");
+void onTaskFailed(asrhub_context_t *ctx) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTaskFailed: asrhub\n");
     }
     switch_mutex_lock(ctx->mutex);
     ctx->started = 0;
@@ -202,13 +202,13 @@ void onTaskFailed(asrproxy_context_t *ctx) {
  *
  * @param ctx
  */
-void onChannelClosed(asrproxy_context_t *ctx) {
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onChannelClosed: asrproxy\n");
+void onChannelClosed(asrhub_context_t *ctx) {
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onChannelClosed: asrhub\n");
     }
     /*
     if (ctx->asr_callback) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onChannelClosed: call on_asr_stopped_func %p\n", ctx->asr_callback->on_asr_stopped_func);
         }
         ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
@@ -260,7 +260,7 @@ public:
     // wss_client;
     typedef websocketpp::lib::lock_guard<websocketpp::lib::mutex> scoped_lock;
 
-    WebsocketClient(int is_ssl, asrproxy_context_t *asr_ctx)
+    WebsocketClient(int is_ssl, asrhub_context_t *asr_ctx)
     : m_open(false), m_done(false) {
         m_asr_ctx = asr_ctx;
 
@@ -301,7 +301,7 @@ public:
             case websocketpp::frame::opcode::text: {
                 nlohmann::json asr_result = nlohmann::json::parse(payload);
                 std::string id_str = getThreadIdOfString(std::this_thread::get_id());
-                if (asrproxy_globals->_debug) {
+                if (asrhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "thread: %s, on_message = %s\n",
                                       id_str.c_str(),
                                       payload.c_str());
@@ -398,7 +398,7 @@ public:
 
     // This method will block until the connection is complete
     int connect(const std::string &uri) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "connect to: %s \n", uri.c_str());
         }
 
@@ -426,7 +426,7 @@ public:
     }
 
     int startTranscription() {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send StartTranscription command\n");
         }
 
@@ -454,11 +454,11 @@ public:
         websocketpp::lib::error_code ec;
         m_client.send(m_hdl, str_startTranscription, websocketpp::frame::opcode::text, ec);
         if (ec) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrproxy send begin msg failed: %s\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrhub send begin msg failed: %s\n",
                               ec.message().c_str());
         } else {
-            if (asrproxy_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrproxy send begin msg success\n");
+            if (asrhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrhub send begin msg success\n");
             }
         }
 
@@ -490,11 +490,11 @@ public:
         websocketpp::lib::error_code ec;
         m_client.send(m_hdl, str_stopTranscription, websocketpp::frame::opcode::text, ec);
         if (ec) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrproxy send stop msg failed: %s\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrhub send stop msg failed: %s\n",
                               ec.message().c_str());
         } else {
-            if (asrproxy_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrproxy send stop msg success\n");
+            if (asrhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrhub send stop msg success\n");
             }
         }
 
@@ -506,7 +506,7 @@ public:
 
     // The open handler will signal that we are ready to start sending data
     void on_open(const websocketpp::connection_hdl &) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Connection opened, starting data!\n");
         }
 
@@ -520,7 +520,7 @@ public:
 
     // The close handler will signal that we should stop sending data
     void on_close(const websocketpp::connection_hdl &) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Connection closed, stopping data!\n");
         }
 
@@ -533,7 +533,7 @@ public:
 
     // The fail handler will signal that we should stop sending data
     void on_fail(const websocketpp::connection_hdl &) {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Connection failed, stopping data!\n");
         }
 
@@ -553,20 +553,20 @@ public:
 
 private:
 
-    asrproxy_context_t *m_asr_ctx;
+    asrhub_context_t *m_asr_ctx;
     websocketpp::connection_hdl m_hdl;
     websocketpp::lib::mutex m_lock;
     bool m_open;
     bool m_done;
 };
 
-// typedef WebsocketClient<websocketpp::config::asio_tls_client> asrproxy_client;
+// typedef WebsocketClient<websocketpp::config::asio_tls_client> asrhub_client;
 
 #define MAX_FRAME_BUFFER_SIZE (1024*1024) //1MB
 #define SAMPLE_RATE 8000
 
-asrproxy_client *generateAsrClient(asrproxy_context_t *ctx) {
-    auto *client = new asrproxy_client(1, ctx);
+asrhub_client *generateAsrClient(asrhub_context_t *ctx) {
+    auto *client = new asrhub_client(1, ctx);
     if (!client) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "generateAsrClient failed.\n");
         return nullptr;
@@ -576,8 +576,8 @@ asrproxy_client *generateAsrClient(asrproxy_context_t *ctx) {
     client->m_client.set_tls_init_handler(bind(&OnTlsInit, ::_1));
 #endif
 
-    if (asrproxy_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "proxy url is:%s\n", ctx->asrproxy_url);
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "proxy url is:%s\n", ctx->asrhub_url);
     }
     return client;
 }
@@ -585,43 +585,43 @@ asrproxy_client *generateAsrClient(asrproxy_context_t *ctx) {
 //======================================== fun asr end ===============
 
 //======================================== freeswitch module start ===============
-SWITCH_MODULE_LOAD_FUNCTION(mod_asrproxy_load);
+SWITCH_MODULE_LOAD_FUNCTION(mod_asrhub_load);
 
-SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_asrproxy_shutdown);
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_asrhub_shutdown);
 
 extern "C"
 {
-SWITCH_MODULE_DEFINITION(mod_asrproxy, mod_asrproxy_load, mod_asrproxy_shutdown, nullptr);
+SWITCH_MODULE_DEFINITION(mod_asrhub, mod_asrhub_load, mod_asrhub_shutdown, nullptr);
 };
 
-static void *init_asrproxy(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd);
+static void *init_asrhub(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd);
 
-static bool start_asrproxy(asrproxy_context_t *ctx, asr_callback_t *asr_callback);
+static bool start_asrhub(asrhub_context_t *ctx, asr_callback_t *asr_callback);
 
-static bool send_audio_to_asrproxy(asrproxy_context_t *ctx, void *data, uint32_t data_len);
+static bool send_audio_to_asrhub(asrhub_context_t *ctx, void *data, uint32_t data_len);
 
-static void stop_asrproxy(asrproxy_context_t *ctx);
+static void stop_asrhub(asrhub_context_t *ctx);
 
-static void destroy_asrproxy(asrproxy_context_t *ctx);
+static void destroy_asrhub(asrhub_context_t *ctx);
 
-static const asr_provider_t asrproxy_funcs = {
-        init_asrproxy,
-        reinterpret_cast<asr_start_func_t>(start_asrproxy),
-        reinterpret_cast<asr_send_audio_func_t>(send_audio_to_asrproxy),
-        reinterpret_cast<asr_stop_func_t>(stop_asrproxy),
-        reinterpret_cast<asr_destroy_func_t>(destroy_asrproxy)
+static const asr_provider_t asrhub_funcs = {
+        init_asrhub,
+        reinterpret_cast<asr_start_func_t>(start_asrhub),
+        reinterpret_cast<asr_send_audio_func_t>(send_audio_to_asrhub),
+        reinterpret_cast<asr_stop_func_t>(stop_asrhub),
+        reinterpret_cast<asr_destroy_func_t>(destroy_asrhub)
 };
 
-static switch_status_t attach_asrproxy_provider_on_channel_init(switch_core_session_t *session) {
+static switch_status_t attach_asrhub_provider_on_channel_init(switch_core_session_t *session) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    switch_channel_set_private(channel, "asrproxy", &asrproxy_funcs);
+    switch_channel_set_private(channel, "asrhub", &asrhub_funcs);
     return SWITCH_STATUS_SUCCESS;
 }
 
-switch_state_handler_table_t asrproxy_cs_handlers = {
+switch_state_handler_table_t asrhub_cs_handlers = {
         /*! executed when the state changes to init */
         // switch_state_handler_t on_init;
-        attach_asrproxy_provider_on_channel_init,
+        attach_asrhub_provider_on_channel_init,
         /*! executed when the state changes to routing */
         // switch_state_handler_t on_routing;
         nullptr,
@@ -676,7 +676,7 @@ void adjustVolume(int16_t *pcm, size_t pcm_len, float vol_multiplier) {
 // params: <uuid> proxyurl=<uri>
 #define MAX_API_ARGC 20
 
-static void *init_asrproxy(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd) {
+static void *init_asrhub(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd) {
     char *_proxy_url = nullptr;
 
     switch_memory_pool_t *pool;
@@ -687,7 +687,7 @@ static void *init_asrproxy(switch_core_session_t *session, const switch_codec_im
     memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
 
     int argc = switch_split(my_cmd, ' ', argv);
-    if (asrproxy_globals->_debug) {
+    if (asrhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "cmd:%s, args count: %d\n", my_cmd, argc);
     }
 
@@ -698,7 +698,7 @@ static void *init_asrproxy(switch_core_session_t *session, const switch_codec_im
             if (cnt == 2) {
                 char *var = ss[0];
                 char *val = ss[1];
-                if (asrproxy_globals->_debug) {
+                if (asrhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "process arg: %s = %s\n", var, val);
                 }
                 if (!strcasecmp(var, "proxyurl")) {
@@ -715,15 +715,15 @@ static void *init_asrproxy(switch_core_session_t *session, const switch_codec_im
         return nullptr;
     }
 
-    asrproxy_context_t *ctx;
-    if (!(ctx = (asrproxy_context_t *) switch_core_session_alloc(session, sizeof(asrproxy_context_t)))) {
+    asrhub_context_t *ctx;
+    if (!(ctx = (asrhub_context_t *) switch_core_session_alloc(session, sizeof(asrhub_context_t)))) {
         goto end;
     }
     ctx->started = 0;
     ctx->stopped = 0;
     ctx->starting = 0;
     ctx->session = session;
-    ctx->asrproxy_url = switch_core_session_strdup(session, _proxy_url);
+    ctx->asrhub_url = switch_core_session_strdup(session, _proxy_url);
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
     if (read_impl->actual_samples_per_second != SAMPLE_RATE) {
@@ -740,25 +740,25 @@ static void *init_asrproxy(switch_core_session_t *session, const switch_codec_im
             ctx = nullptr;
             goto end;
         }
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                               "create re-sampler bcs of media sampler/s is %d but fun asr support: %d, while ms/p: %d\n",
                               read_impl->actual_samples_per_second, SAMPLE_RATE, read_impl->microseconds_per_packet);
         }
     }
 
-    // increment asrproxy concurrent count
-    switch_atomic_inc(&asrproxy_globals->asrproxy_concurrent_cnt);
+    // increment asrhub concurrent count
+    switch_atomic_inc(&asrhub_globals->asrhub_concurrent_cnt);
 
 end:
     switch_core_destroy_memory_pool(&pool);
     return ctx;
 }
 
-static bool start_asrproxy(asrproxy_context_t *ctx, asr_callback_t *asr_callback) {
+static bool start_asrhub(asrhub_context_t *ctx, asr_callback_t *asr_callback) {
     bool  ret_val = false;
     if (ctx->stopped == 1) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "start_asrproxy: ctx->stopped\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "start_asrhub: ctx->stopped\n");
         return ret_val;
     }
 
@@ -766,12 +766,12 @@ static bool start_asrproxy(asrproxy_context_t *ctx, asr_callback_t *asr_callback
     if (ctx->started == 0) {
         if (ctx->starting == 0) {
             ctx->starting = 1;
-            if (asrproxy_globals->_debug) {
+            if (asrhub_globals->_debug) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Transaction \n");
             }
             switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
             ctx->asr_callback = asr_callback;
-            asrproxy_client *client = generateAsrClient(ctx);
+            asrhub_client *client = generateAsrClient(ctx);
             if (!client) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Asr Client init failed.%s\n",
                                   switch_channel_get_name(channel));
@@ -779,16 +779,16 @@ static bool start_asrproxy(asrproxy_context_t *ctx, asr_callback_t *asr_callback
                 goto unlock;
             }
             ctx->client = client;
-            if (asrproxy_globals->_debug) {
+            if (asrhub_globals->_debug) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Init Fun Asr Client.%s\n",
                                   switch_channel_get_name(channel));
             }
 
-            if (ctx->client->connect(std::string(ctx->asrproxy_url)) < 0) {
+            if (ctx->client->connect(std::string(ctx->asrhub_url)) < 0) {
                 ctx->stopped = 1;
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                   "start() failed. may be can not connect server(%s). please check network or firewalld:%s\n",
-                                  ctx->asrproxy_url, switch_channel_get_name(channel));
+                                  ctx->asrhub_url, switch_channel_get_name(channel));
                 ctx->client->stop();
                 delete ctx->client;
                 ctx->client = nullptr;
@@ -805,7 +805,7 @@ static bool start_asrproxy(asrproxy_context_t *ctx, asr_callback_t *asr_callback
     return ret_val;
 }
 
-static bool send_audio_to_asrproxy(asrproxy_context_t *ctx, void *data, uint32_t data_len) {
+static bool send_audio_to_asrhub(asrhub_context_t *ctx, void *data, uint32_t data_len) {
     bool  ret_val = false;
     // send audio to asr
     switch_mutex_lock(ctx->mutex);
@@ -816,7 +816,7 @@ static bool send_audio_to_asrproxy(asrproxy_context_t *ctx, void *data, uint32_t
             switch_resample_process(ctx->re_sampler, (int16_t *) data, (int) data_len / 2 / 1);
             memcpy(data, ctx->re_sampler->to, ctx->re_sampler->to_len * 2 * 1);
             data_len = ctx->re_sampler->to_len * 2 * 1;
-            if (asrproxy_globals->_debug) {
+            if (asrhub_globals->_debug) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "ASR new samples:%d\n",
                                   ctx->re_sampler->to_len);
             }
@@ -838,11 +838,11 @@ static bool send_audio_to_asrproxy(asrproxy_context_t *ctx, void *data, uint32_t
                 goto unlock;
             }
         } else {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send_audio_to_asrproxy: connecting, ignore send audio\n");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send_audio_to_asrhub: connecting, ignore send audio\n");
         }
         ret_val = true;
-        if (asrproxy_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send_audio_to_asrproxy: send audio %d\n",
+        if (asrhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send_audio_to_asrhub: send audio %d\n",
                               data_len);
         }
     } else {
@@ -857,83 +857,83 @@ static bool send_audio_to_asrproxy(asrproxy_context_t *ctx, void *data, uint32_t
     return ret_val;
 }
 
-static void stop_asrproxy(asrproxy_context_t *ctx) {
+static void stop_asrhub(asrhub_context_t *ctx) {
     switch_mutex_lock(ctx->mutex);
     switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
     if (ctx->client) {
-        if (asrproxy_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "try to stop asrproxy on channel: %s\n",
+        if (asrhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "try to stop asrhub on channel: %s\n",
                               switch_channel_get_name(channel));
         }
         ctx->client->stop();
         //7: 识别结束, 释放fac对象
         delete ctx->client;
         ctx->client = nullptr;
-        if (asrproxy_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop asrproxy and client is released on channel: %s\n",
+        if (asrhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop asrhub and client is released on channel: %s\n",
                               switch_channel_get_name(channel));
         }
     } else {
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                              "asrproxy has already stopped and released on channel:%s\n",
+                              "asrhub has already stopped and released on channel:%s\n",
                               switch_channel_get_name(channel));
         }
     }
     switch_mutex_unlock(ctx->mutex);
 }
 
-static void destroy_asrproxy(asrproxy_context_t *ctx) {
+static void destroy_asrhub(asrhub_context_t *ctx) {
     switch_core_session_t *session = ctx->session;
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    if (asrproxy_globals->_debug) {
+    if (asrhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
-                          "destroy_asrproxy: release all resource for session -> on channel: %s\n",
+                          "destroy_asrhub: release all resource for session -> on channel: %s\n",
                           switch_channel_get_name(channel));
     }
-    stop_asrproxy(ctx);
-    if (asrproxy_globals->_debug) {
+    stop_asrhub(ctx);
+    if (asrhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE,
-                          "destroy_asrproxy: stop_asrproxy -> channel: %s\n",
+                          "destroy_asrhub: stop_asrhub -> channel: %s\n",
                           switch_channel_get_name(channel));
     }
 
-    // decrement asrproxy concurrent count
-    switch_atomic_dec(&asrproxy_globals->asrproxy_concurrent_cnt);
+    // decrement asrhub concurrent count
+    switch_atomic_dec(&asrhub_globals->asrhub_concurrent_cnt);
 
     if (ctx->re_sampler) {
         switch_resample_destroy(&ctx->re_sampler);
-        if (asrproxy_globals->_debug) {
+        if (asrhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE,
-                              "destroy_asrproxy: switch_resample_destroy -> on channel: %s\n",
+                              "destroy_asrhub: switch_resample_destroy -> on channel: %s\n",
                               switch_channel_get_name(channel));
         }
     }
     switch_mutex_destroy(ctx->mutex);
-    if (asrproxy_globals->_debug) {
+    if (asrhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE,
-                          "destroy_asrproxy: switch_mutex_destroy -> on channel: %s\n",
+                          "destroy_asrhub: switch_mutex_destroy -> on channel: %s\n",
                           switch_channel_get_name(channel));
     }
 }
 
-SWITCH_STANDARD_API(asrproxy_concurrent_cnt_function) {
-    const uint32_t concurrent_cnt = switch_atomic_read (&asrproxy_globals->asrproxy_concurrent_cnt);
+SWITCH_STANDARD_API(asrhub_concurrent_cnt_function) {
+    const uint32_t concurrent_cnt = switch_atomic_read (&asrhub_globals->asrhub_concurrent_cnt);
     stream->write_function(stream, "%d\n", concurrent_cnt);
     return SWITCH_STATUS_SUCCESS;
 }
 
 #define ASRPROXY_DEBUG_SYNTAX "<on|off>"
-SWITCH_STANDARD_API(mod_asrproxy_debug) {
+SWITCH_STANDARD_API(mod_asrhub_debug) {
     if (zstr(cmd)) {
         stream->write_function(stream, "-USAGE: %s\n", ASRPROXY_DEBUG_SYNTAX);
     } else {
         if (!strcasecmp(cmd, "on")) {
-            asrproxy_globals->_debug = true;
-            stream->write_function(stream, "asrproxy Debug: on\n");
+            asrhub_globals->_debug = true;
+            stream->write_function(stream, "asrhub Debug: on\n");
         } else if (!strcasecmp(cmd, "off")) {
-            asrproxy_globals->_debug = false;
-            stream->write_function(stream, "asrproxy Debug: off\n");
+            asrhub_globals->_debug = false;
+            stream->write_function(stream, "asrhub Debug: off\n");
         } else {
             stream->write_function(stream, "-USAGE: %s\n", ASRPROXY_DEBUG_SYNTAX);
         }
@@ -944,28 +944,28 @@ SWITCH_STANDARD_API(mod_asrproxy_debug) {
 /**
  *  定义load函数，加载时运行
  */
-SWITCH_MODULE_LOAD_FUNCTION(mod_asrproxy_load) {
+SWITCH_MODULE_LOAD_FUNCTION(mod_asrhub_load) {
     switch_api_interface_t *api_interface = nullptr;
     *module_interface = switch_loadable_module_create_module_interface(pool, modname);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_asrproxy load starting\n");
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_asrhub load starting\n");
 
-    asrproxy_globals = (asrproxy_global_t *)switch_core_alloc(pool, sizeof(asrproxy_global_t));
+    asrhub_globals = (asrhub_global_t *)switch_core_alloc(pool, sizeof(asrhub_global_t));
 
-    asrproxy_globals->_debug = false;
+    asrhub_globals->_debug = false;
 
     // register global state handlers
-    switch_core_add_state_handler(&asrproxy_cs_handlers);
+    switch_core_add_state_handler(&asrhub_cs_handlers);
 
     SWITCH_ADD_API(api_interface,
-                   "asrproxy_concurrent_cnt",
-                   "asrproxy_concurrent_cnt api",
-                   asrproxy_concurrent_cnt_function,
+                   "asrhub_concurrent_cnt",
+                   "asrhub_concurrent_cnt api",
+                   asrhub_concurrent_cnt_function,
                    "<cmd><args>");
 
-    SWITCH_ADD_API(api_interface, "asrproxy_debug", "Set asrproxy debug", mod_asrproxy_debug, ASRPROXY_DEBUG_SYNTAX);
+    SWITCH_ADD_API(api_interface, "asrhub_debug", "Set asrhub debug", mod_asrhub_debug, ASRPROXY_DEBUG_SYNTAX);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_asrproxy loaded\n");
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_asrhub loaded\n");
 
     return SWITCH_STATUS_SUCCESS;
 }
@@ -973,11 +973,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_asrproxy_load) {
 /**
  *  定义shutdown函数，关闭时运行
  */
-SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_asrproxy_shutdown) {
+SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_asrhub_shutdown) {
     // unregister global state handlers
-    switch_core_remove_state_handler(&asrproxy_cs_handlers);
+    switch_core_remove_state_handler(&asrhub_cs_handlers);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_asrproxy shutdown called\n");
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_asrproxy unload\n");
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_asrhub shutdown called\n");
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_asrhub unload\n");
     return SWITCH_STATUS_SUCCESS;
 }
