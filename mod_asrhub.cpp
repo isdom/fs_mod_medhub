@@ -82,6 +82,10 @@ typedef struct {
     switch_audio_resampler_t *re_sampler;
 char                        *asrhub_url;
     asr_callback_t          *asr_callback;
+    switch_codec_t          playback_codec;
+    uint32_t                playback_rate;
+    int32_t                 playback_channels;
+    uint32_t                playback_timestamp;
 } asrhub_context_t;
 
 /**
@@ -218,6 +222,52 @@ void onChannelClosed(asrhub_context_t *ctx) {
      */
 }
 
+void onPlaybackStart(asrhub_context_t *ctx, uint32_t rate, int32_t interval, int32_t channels) {
+    if (switch_core_codec_init(&ctx->playback_codec,
+                               "L16",
+                               NULL,
+                               NULL,
+                               rate,
+                               interval,
+                               channels,
+                               SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
+                               NULL,
+                               switch_core_session_get_pool(ctx->session)) ==
+        SWITCH_STATUS_SUCCESS) {
+        if (asrhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
+                              "Codec Activated %s@%uhz %u channels %dms\n",
+                              "L16", rate, channels, interval);
+        }
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_WARNING,
+                          "Raw Codec Activation Failed %s@%uhz %u channels %dms\n",
+                          "L16", rate, channels, interval);
+    }
+    ctx->playback_rate = rate;
+    ctx->playback_channels = channels;
+    ctx->playback_timestamp = 0;
+}
+
+void onPlaybackStop(asrhub_context_t *ctx, const char *file) {
+
+}
+
+void onPlaybackData(asrhub_context_t *ctx, uint8_t *data, int32_t len) {
+    switch_frame_t write_frame = { 0 };
+    write_frame.codec = &ctx->playback_codec;
+    write_frame.rate = ctx->playback_rate;
+    write_frame.channels = ctx->playback_channels;
+    write_frame.samples = len / 2;
+    write_frame.timestamp = ctx->playback_timestamp;
+    write_frame.data = data;
+    write_frame.datalen = len;
+    /*switch_status_t status =*/
+    switch_core_session_write_frame(ctx->session, &write_frame, SWITCH_IO_FLAG_NONE, 0);
+    ctx->playback_timestamp += write_frame.samples;
+}
+
+
 /**
  * Define a semi-cross platform helper method that waits/sleeps for a bit.
  */
@@ -299,7 +349,7 @@ public:
         const std::string &payload = msg->get_payload();
         switch (msg->get_opcode()) {
             case websocketpp::frame::opcode::text: {
-                nlohmann::json asr_result = nlohmann::json::parse(payload);
+                nlohmann::json hubevent = nlohmann::json::parse(payload);
                 std::string id_str = getThreadIdOfString(std::this_thread::get_id());
                 if (asrhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "thread: %s, on_message = %s\n",
@@ -307,7 +357,7 @@ public:
                                       payload.c_str());
                 }
 
-                if (asr_result["header"]["name"] == "TranscriptionStarted") {
+                if (hubevent["header"]["name"] == "TranscriptionStarted") {
                     /* TranscriptionStarted 事件
                     {
                         "header": {
@@ -323,7 +373,7 @@ public:
                         }
                     } */
                     onTranscriptionStarted(m_asr_ctx);
-                } else if (asr_result["header"]["name"] == "TranscriptionCompleted") {
+                } else if (hubevent["header"]["name"] == "TranscriptionCompleted") {
                     /* TranscriptionCompleted 事件
                     {
                         "header": {
@@ -339,7 +389,7 @@ public:
                                               ec.message().c_str());
                         }
                     }
-                } else if (asr_result["header"]["name"] == "SentenceBegin") {
+                } else if (hubevent["header"]["name"] == "SentenceBegin") {
                     /* SentenceBegin 事件
                     {
                         "header": {
@@ -351,7 +401,7 @@ public:
                         }
                     } */
                     onSentenceBegin(m_asr_ctx);
-                } else if (asr_result["header"]["name"] == "TranscriptionResultChanged") {
+                } else if (hubevent["header"]["name"] == "TranscriptionResultChanged") {
                     /* TranscriptionResultChanged 事件
                     {
                         "header": {
@@ -363,9 +413,9 @@ public:
                             "result":"今年双十一"
                         }
                     } */
-                    std::string result = asr_result["payload"]["result"];
+                    std::string result = hubevent["payload"]["result"];
                     onTranscriptionResultChanged(m_asr_ctx, result);
-                } else if (asr_result["header"]["name"] == "SentenceEnd") {
+                } else if (hubevent["header"]["name"] == "SentenceEnd") {
                     /* SentenceEnd 事件
                     {
                         "header": {
@@ -378,17 +428,56 @@ public:
                             "result": "今年双十一我要买电视"
                         }
                     } */
-                    std::string result = asr_result["payload"]["result"];
+                    std::string result = hubevent["payload"]["result"];
                     asr_sentence_result_t asr_sentence_result = {
-                            asr_result["payload"]["index"],
-                            asr_result["payload"]["begin_time"],
-                            asr_result["payload"]["time"],
-                            asr_result["payload"]["confidence"],
+                            hubevent["payload"]["index"],
+                            hubevent["payload"]["begin_time"],
+                            hubevent["payload"]["time"],
+                            hubevent["payload"]["confidence"],
                             result.c_str()
                     };
                     onSentenceEnd(m_asr_ctx, &asr_sentence_result);
+                } else if (hubevent["header"]["name"] == "PlaybackStart") {
+                    /* PlaybackStart 事件
+                    {
+                        "header": {
+                            "name": "PlaybackStart",
+                        },
+                        "payload": {
+                            "file": "...",
+                            "rate": 8000,
+                            "interval": 20,
+                            "channels": 1
+                        }
+                    } */
+                    std::string filename = hubevent["payload"]["file"];
+                    uint32_t rate = hubevent["payload"]["rate"];
+                    int32_t interval = hubevent["payload"]["interval"];
+                    int32_t channels = hubevent["payload"]["channels"];
+                    if (asrhub_globals->_debug) {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
+                    }
+                    onPlaybackStart(m_asr_ctx, rate, interval, channels);
+                } else if (hubevent["header"]["name"] == "PlaybackStop") {
+                    /* PlaybackStop 事件
+                    {
+                        "header": {
+                            "name": "PlaybackStop",
+                        },
+                        "payload": {
+                            "file": "..."
+                        }
+                    } */
+                    std::string filename = hubevent["payload"]["file"];
+                    if (asrhub_globals->_debug) {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStop event: %s\n", filename.c_str());
+                    }
+                    onPlaybackStop(m_asr_ctx, filename.c_str());
                 }
             }
+                break;
+            case websocketpp::frame::opcode::binary:
+                onPlaybackData(m_asr_ctx, (uint8_t*)payload.data(), (int32_t)payload.size());
                 break;
             default:
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "un-handle opcode: %d\n", msg->get_opcode());
@@ -548,6 +637,38 @@ public:
         m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
+    void playback(const char *filename) {
+        nlohmann::json json_playback = {
+                {"header", {
+                        // 当次消息请求ID，随机生成32位唯一ID。
+                        //{"message_id", message_id},
+                        // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                        //{"task_id", m_task_id},
+                        //{"namespace", "FlowingSpeechSynthesizer"},
+                        {"name", "Playback"}
+                        //{"appkey", m_appkey}
+                }},
+                {"payload", {
+                       {"file", filename}
+                }}
+        };
+
+        const std::string str_playback = json_playback.dump();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "playback: send Playback command, detail: %s\n",
+                          str_playback.c_str());
+
+        websocketpp::lib::error_code ec;
+        m_client.send(m_hdl, str_playback, websocketpp::frame::opcode::text, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrhub send playback msg failed: %s\n",
+                              ec.message().c_str());
+        } else {
+            if (asrhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrhub send playback msg success\n");
+            }
+        }
+    }
+
     websocketpp::client<T> m_client;
     websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
 
@@ -677,7 +798,7 @@ void adjustVolume(int16_t *pcm, size_t pcm_len, float vol_multiplier) {
 #define MAX_API_ARGC 20
 
 static void *init_asrhub(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd) {
-    char *_proxy_url = nullptr;
+    char *_hub_url = nullptr;
 
     switch_memory_pool_t *pool;
     switch_core_new_memory_pool(&pool);
@@ -702,14 +823,14 @@ static void *init_asrhub(switch_core_session_t *session, const switch_codec_impl
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "process arg: %s = %s\n", var, val);
                 }
                 if (!strcasecmp(var, "proxyurl")) {
-                    _proxy_url = val;
+                    _hub_url = val;
                     continue;
                 }
             }
         }
     }
 
-    if (!_proxy_url) {
+    if (!_hub_url) {
         switch_core_destroy_memory_pool(&pool);
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "proxyurl is required.\n");
         return nullptr;
@@ -723,7 +844,7 @@ static void *init_asrhub(switch_core_session_t *session, const switch_codec_impl
     ctx->stopped = 0;
     ctx->starting = 0;
     ctx->session = session;
-    ctx->asrhub_url = switch_core_session_strdup(session, _proxy_url);
+    ctx->asrhub_url = switch_core_session_strdup(session, _hub_url);
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
     if (read_impl->actual_samples_per_second != SAMPLE_RATE) {
@@ -923,10 +1044,10 @@ SWITCH_STANDARD_API(asrhub_concurrent_cnt_function) {
     return SWITCH_STATUS_SUCCESS;
 }
 
-#define ASRPROXY_DEBUG_SYNTAX "<on|off>"
+#define ASRHUB_DEBUG_SYNTAX "<on|off>"
 SWITCH_STANDARD_API(mod_asrhub_debug) {
     if (zstr(cmd)) {
-        stream->write_function(stream, "-USAGE: %s\n", ASRPROXY_DEBUG_SYNTAX);
+        stream->write_function(stream, "-USAGE: %s\n", ASRHUB_DEBUG_SYNTAX);
     } else {
         if (!strcasecmp(cmd, "on")) {
             asrhub_globals->_debug = true;
@@ -935,7 +1056,7 @@ SWITCH_STANDARD_API(mod_asrhub_debug) {
             asrhub_globals->_debug = false;
             stream->write_function(stream, "asrhub Debug: off\n");
         } else {
-            stream->write_function(stream, "-USAGE: %s\n", ASRPROXY_DEBUG_SYNTAX);
+            stream->write_function(stream, "-USAGE: %s\n", ASRHUB_DEBUG_SYNTAX);
         }
     }
     return SWITCH_STATUS_SUCCESS;
@@ -963,7 +1084,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_asrhub_load) {
                    asrhub_concurrent_cnt_function,
                    "<cmd><args>");
 
-    SWITCH_ADD_API(api_interface, "asrhub_debug", "Set asrhub debug", mod_asrhub_debug, ASRPROXY_DEBUG_SYNTAX);
+    SWITCH_ADD_API(api_interface,
+                   "asrhub_debug",
+                   "Set asrhub debug",
+                   mod_asrhub_debug,
+                   ASRHUB_DEBUG_SYNTAX);
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_asrhub loaded\n");
 
