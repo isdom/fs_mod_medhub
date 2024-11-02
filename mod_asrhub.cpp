@@ -780,20 +780,6 @@ switch_state_handler_table_t asrhub_cs_handlers = {
         0
 };
 
-void adjustVolume(int16_t *pcm, size_t pcm_len, float vol_multiplier) {
-    int32_t pcm_val;
-    for (size_t ctr = 0; ctr < pcm_len; ctr++) {
-        pcm_val = (int32_t)((float)pcm[ctr] * vol_multiplier);
-        if (pcm_val < 32767 && pcm_val > -32768) {
-            pcm[ctr] = (int16_t)pcm_val;
-        } else if (pcm_val > 32767) {
-            pcm[ctr] = 32767;
-        } else if (pcm_val < -32768) {
-            pcm[ctr] = -32768;
-        }
-    }
-}
-
 // params: <uuid> proxyurl=<uri>
 #define MAX_API_ARGC 20
 
@@ -866,6 +852,11 @@ static void *init_asrhub(switch_core_session_t *session, const switch_codec_impl
                               "create re-sampler bcs of media sampler/s is %d but fun asr support: %d, while ms/p: %d\n",
                               read_impl->actual_samples_per_second, SAMPLE_RATE, read_impl->microseconds_per_packet);
         }
+    }
+
+    {
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        switch_channel_set_private(channel, "_asrhub_ctx", ctx);
     }
 
     // increment asrhub concurrent count
@@ -1062,6 +1053,99 @@ SWITCH_STANDARD_API(mod_asrhub_debug) {
     return SWITCH_STATUS_SUCCESS;
 }
 
+// hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
+SWITCH_STANDARD_API(hub_uuid_play_function) {
+    if (zstr(cmd)) {
+        stream->write_function(stream, "hub_uuid_play: parameter missing.\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play: parameter missing.\n");
+        return SWITCH_STATUS_SUCCESS;
+    }
+
+    switch_status_t status = SWITCH_STATUS_SUCCESS;
+    switch_core_session_t *session4play = nullptr;
+    char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr;
+
+    switch_memory_pool_t *pool;
+    switch_core_new_memory_pool(&pool);
+    char *my_cmd = switch_core_strdup(pool, cmd);
+
+    char *argv[MAX_API_ARGC];
+    memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
+
+    int argc = switch_split(my_cmd, ' ', argv);
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_play: cmd[%s], argc[%d]\n", my_cmd, argc);
+    }
+
+    if (argc < 1) {
+        stream->write_function(stream, "uuid is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    for (int idx = 1; idx < MAX_API_ARGC; idx++) {
+        if (argv[idx]) {
+            char *ss[2] = {nullptr, nullptr};
+            int cnt = switch_split(argv[idx], '=', ss);
+            if (cnt == 2) {
+                char *var = ss[0];
+                char *val = ss[1];
+                if (asrhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_play: process arg[%s = %s]\n", var, val);
+                }
+                if (!strcasecmp(var, "file")) {
+                    _file = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "cancel_on_speak")) {
+                    _cancel_on_speak = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "pause_on_speak")) {
+                    _pause_on_speak = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "content_id")) {
+                    _content_id = val;
+                    continue;
+                }
+            }
+        }
+    }
+
+    if (!_file) {
+        stream->write_function(stream, "file is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    session4play = switch_core_session_force_locate(argv[0]);
+    if (!session4play) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found session by %s\n",
+                          argv[0]);
+    } else {
+        switch_channel_t *channel = switch_core_session_get_channel(session4play);
+        if (asrhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_play:%s\n", switch_channel_get_name(channel));
+        }
+
+        asrhub_context_t *ctx = (asrhub_context_t *)switch_channel_get_private(channel, "_asrhub_ctx");
+        if (!ctx) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found asrhub ctx by %s\n",
+                              argv[0]);
+        }
+        else {
+            ctx->client->playback(_file);
+        }
+
+        // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+        //  We meet : ... Locked, Waiting on external entities
+        switch_core_session_rwunlock(session4play);
+    }
+
+    end:
+    switch_core_destroy_memory_pool(&pool);
+    return status;
+}
+
 /**
  *  定义load函数，加载时运行
  */
@@ -1077,6 +1161,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_asrhub_load) {
 
     // register global state handlers
     switch_core_add_state_handler(&asrhub_cs_handlers);
+
+    SWITCH_ADD_API(api_interface,
+                   "hub_uuid_play",
+                   "hub_uuid_play api",
+                   hub_uuid_play_function,
+                   "<cmd><args>");
 
     SWITCH_ADD_API(api_interface,
                    "asrhub_concurrent_cnt",
