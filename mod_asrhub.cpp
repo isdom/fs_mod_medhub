@@ -223,34 +223,45 @@ void onChannelClosed(asrhub_context_t *ctx) {
 }
 
 void onPlaybackStart(asrhub_context_t *ctx, uint32_t rate, int32_t interval, int32_t channels) {
-    if (switch_core_codec_init(&ctx->playback_codec,
-                               "L16",
-                               NULL,
-                               NULL,
-                               rate,
-                               interval,
-                               channels,
-                               SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
-                               NULL,
-                               switch_core_session_get_pool(ctx->session)) ==
-        SWITCH_STATUS_SUCCESS) {
-        if (asrhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
-                              "Codec Activated %s@%uhz %u channels %dms\n",
+    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+        if (switch_core_codec_init(&ctx->playback_codec,
+                                   "L16",
+                                   NULL,
+                                   NULL,
+                                   rate,
+                                   interval,
+                                   channels,
+                                   SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
+                                   NULL,
+                                   switch_core_session_get_pool(ctx->session)) ==
+            SWITCH_STATUS_SUCCESS) {
+            if (asrhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
+                                  "Codec Activated %s@%uhz %u channels %dms\n",
+                                  "L16", rate, channels, interval);
+            }
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_WARNING,
+                              "Raw Codec Activation Failed %s@%uhz %u channels %dms\n",
                               "L16", rate, channels, interval);
         }
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_WARNING,
-                          "Raw Codec Activation Failed %s@%uhz %u channels %dms\n",
-                          "L16", rate, channels, interval);
+        ctx->playback_rate = rate;
+        ctx->playback_channels = channels;
+        ctx->playback_timestamp = 0;
+
+        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+        switch_channel_set_private(channel, "znc_playing", "1");
+
+        switch_core_session_rwunlock(ctx->session);
     }
-    ctx->playback_rate = rate;
-    ctx->playback_channels = channels;
-    ctx->playback_timestamp = 0;
 }
 
 void onPlaybackStop(asrhub_context_t *ctx, const char *file) {
-
+    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+        switch_channel_set_private(channel, "znc_playing", nullptr);
+        switch_core_session_rwunlock(ctx->session);
+    }
 }
 
 void onPlaybackData(asrhub_context_t *ctx, uint8_t *data, int32_t len) {
