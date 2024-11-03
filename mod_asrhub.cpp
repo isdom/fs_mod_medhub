@@ -680,6 +680,38 @@ public:
         }
     }
 
+    void playtts(const char *text) {
+        const nlohmann::json json_playtts = {
+                {"header", {
+                                   // 当次消息请求ID，随机生成32位唯一ID。
+                                   //{"message_id", message_id},
+                                   // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                                   //{"task_id", m_task_id},
+                                   //{"namespace", "FlowingSpeechSynthesizer"},
+                                   {"name", "PlayTTS"}
+                                   //{"appkey", m_appkey}
+                           }},
+                {"payload", {
+                                   {"text", text}
+                           }}
+        };
+
+        const std::string str_playtts = json_playtts.dump();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "playback: send Playback command, detail: %s\n",
+                          str_playtts.c_str());
+
+        websocketpp::lib::error_code ec;
+        m_client.send(m_hdl, str_playtts, websocketpp::frame::opcode::text, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrhub send playtts msg failed: %s\n",
+                              ec.message().c_str());
+        } else {
+            if (asrhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrhub send playtts msg success\n");
+            }
+        }
+    }
+
     websocketpp::client<T> m_client;
     websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
 
@@ -1157,6 +1189,177 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
     return status;
 }
 
+std::string to_utf8(uint32_t cp) {
+    /*
+    if using C++11 or later, you can do this:
+
+    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
+    return conv.to_bytes( (char32_t)cp );
+
+    Otherwise...
+    */
+
+    std::string result;
+
+    int count;
+    if (cp <= 0x007F) {
+        count = 1;
+    }
+    else if (cp <= 0x07FF) {
+        count = 2;
+    }
+    else if (cp <= 0xFFFF) {
+        count = 3;
+    }
+    else if (cp <= 0x10FFFF) {
+        count = 4;
+    }
+    else {
+        return result; // or throw an exception
+    }
+
+    result.resize(count);
+
+    if (count > 1)
+    {
+        for (int i = count-1; i > 0; --i)
+        {
+            result[i] = (char) (0x80 | (cp & 0x3F));
+            cp >>= 6;
+        }
+
+        for (int i = 0; i < count; ++i)
+            cp |= (1 << (7-i));
+    }
+
+    result[0] = (char) cp;
+
+    return result;
+}
+
+void ues_to_utf8(std::string &ues) {
+    std::string::size_type startIdx = 0;
+    do {
+        startIdx = ues.find("\\u", startIdx);
+        if (startIdx == std::string::npos) break;
+
+        std::string::size_type endIdx = ues.find_first_not_of("0123456789abcdefABCDEF", startIdx+2);
+        if (endIdx == std::string::npos) {
+            endIdx = ues.length() + 1;
+        }
+
+        std::string tmpStr = ues.substr(startIdx+2, endIdx-(startIdx+2));
+        std::istringstream iss(tmpStr);
+
+        uint32_t cp;
+        if (iss >> std::hex >> cp)
+        {
+            std::string utf8 = to_utf8(cp);
+            ues.replace(startIdx, 2+tmpStr.length(), utf8);
+            startIdx += utf8.length();
+        }
+        else {
+            startIdx += 2;
+        }
+    }
+    while (true);
+}
+
+// hub_uuid_tts <uuid> text=<text> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
+SWITCH_STANDARD_API(hub_uuid_tts_function) {
+    if (zstr(cmd)) {
+        stream->write_function(stream, "hub_uuid_tts: parameter missing.\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_tts: parameter missing.\n");
+        return SWITCH_STATUS_SUCCESS;
+    }
+
+    switch_status_t status = SWITCH_STATUS_SUCCESS;
+    switch_core_session_t *session4play = nullptr;
+    char *_text = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr;
+
+    switch_memory_pool_t *pool;
+    switch_core_new_memory_pool(&pool);
+    char *my_cmd = switch_core_strdup(pool, cmd);
+
+    char *argv[MAX_API_ARGC];
+    memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
+
+    int argc = switch_split(my_cmd, ' ', argv);
+    if (asrhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_play: cmd[%s], argc[%d]\n", my_cmd, argc);
+    }
+
+    if (argc < 1) {
+        stream->write_function(stream, "uuid is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    for (int idx = 1; idx < MAX_API_ARGC; idx++) {
+        if (argv[idx]) {
+            char *ss[2] = {nullptr, nullptr};
+            int cnt = switch_split(argv[idx], '=', ss);
+            if (cnt == 2) {
+                char *var = ss[0];
+                char *val = ss[1];
+                if (asrhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_play: process arg[%s = %s]\n", var, val);
+                }
+                if (!strcasecmp(var, "text")) {
+                    std::string ues(val);
+                    ues_to_utf8(ues);
+                    _text = switch_core_strdup(pool, ues.c_str());
+                    continue;
+                }
+                if (!strcasecmp(var, "cancel_on_speak")) {
+                    _cancel_on_speak = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "pause_on_speak")) {
+                    _pause_on_speak = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "content_id")) {
+                    _content_id = val;
+                    continue;
+                }
+            }
+        }
+    }
+
+    if (!_text) {
+        stream->write_function(stream, "text is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    session4play = switch_core_session_force_locate(argv[0]);
+    if (!session4play) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found session by %s\n",
+                          argv[0]);
+    } else {
+        switch_channel_t *channel = switch_core_session_get_channel(session4play);
+        if (asrhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_play:%s\n", switch_channel_get_name(channel));
+        }
+
+        asrhub_context_t *ctx = (asrhub_context_t *)switch_channel_get_private(channel, "_asrhub_ctx");
+        if (!ctx) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found asrhub ctx by %s\n",
+                              argv[0]);
+        }
+        else {
+            ctx->client->playtts(_text);
+        }
+
+        // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+        //  We meet : ... Locked, Waiting on external entities
+        switch_core_session_rwunlock(session4play);
+    }
+
+    end:
+    switch_core_destroy_memory_pool(&pool);
+    return status;
+}
+
 /**
  *  定义load函数，加载时运行
  */
@@ -1177,6 +1380,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_asrhub_load) {
                    "hub_uuid_play",
                    "hub_uuid_play api",
                    hub_uuid_play_function,
+                   "<cmd><args>");
+
+    SWITCH_ADD_API(api_interface,
+                   "hub_uuid_tts",
+                   "hub_uuid_tts api",
+                   hub_uuid_tts_function,
                    "<cmd><args>");
 
     SWITCH_ADD_API(api_interface,
