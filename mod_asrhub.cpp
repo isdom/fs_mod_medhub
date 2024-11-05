@@ -712,6 +712,38 @@ public:
         }
     }
 
+    void stop_playback(const char *filename) {
+        nlohmann::json json_stop_playback = {
+                {"header", {
+                                   // 当次消息请求ID，随机生成32位唯一ID。
+                                   //{"message_id", message_id},
+                                   // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                                   //{"task_id", m_task_id},
+                                   //{"namespace", "FlowingSpeechSynthesizer"},
+                                   {"name", "StopPlayback"}
+                                   //{"appkey", m_appkey}
+                           }}
+//                {"payload", {
+//                                   {"file", filename}
+//                           }}
+        };
+
+        const std::string str_stop_playback = json_stop_playback.dump();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "playback: send StopPlayback command, detail: %s\n",
+                          str_stop_playback.c_str());
+
+        websocketpp::lib::error_code ec;
+        m_client.send(m_hdl, str_stop_playback, websocketpp::frame::opcode::text, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "asrhub send stop playback msg failed: %s\n",
+                              ec.message().c_str());
+        } else {
+            if (asrhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asrhub send stop playback msg success\n");
+            }
+        }
+    }
+
     websocketpp::client<T> m_client;
     websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
 
