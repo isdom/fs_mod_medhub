@@ -940,6 +940,9 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
                               read_impl->actual_samples_per_second, SAMPLE_RATE, read_impl->microseconds_per_packet);
         }
     }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "init_medhub's read_impl: samples_per_packet: %d/samples_per_second: %d/actual_samples_per_second: %d/microseconds_per_packet: %d\n",
+                      read_impl->samples_per_packet, read_impl->samples_per_second, read_impl->actual_samples_per_second,
+                      read_impl->microseconds_per_packet);
 
     /*
     {
