@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-project(mod_asrhub)
+project(mod_medhub)
 
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "The C++ version to be used.")
 
@@ -9,4 +9,4 @@ include_directories(third_party/websocket)
 include_directories(third_party/asio/asio/include)
 include_directories(third_party/json/include)
 
-ADD_LIBRARY (mod_asrhub SHARED mod_asrhub.cpp)
+ADD_LIBRARY (mod_medhub SHARED mod_medhub.cpp)
