@@ -356,6 +356,10 @@ public:
         return sin.str();
     }
 
+    bool is_connected() {
+        return m_open;
+    }
+
     void on_message(websocketpp::connection_hdl hdl, message_ptr msg) {
         const std::string &payload = msg->get_payload();
         switch (msg->get_opcode()) {
@@ -607,7 +611,7 @@ public:
     // The open handler will signal that we are ready to start sending data
     void on_open(const websocketpp::connection_hdl &) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Connection opened, starting data!\n");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Connection opened, starting data!\n");
         }
 
         {
@@ -1005,13 +1009,13 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
     switch_mutex_lock(ctx->mutex);
     ctx->asr_callback = asr_callback;
     if (ctx->client) {
-        if (ctx->started) {
+        if (ctx->client->is_connected()) {
             if (medhub_globals->_debug) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Transaction \n");
             }
             ctx->client->startTranscription();
         } else {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Media Hub not connect, ignore \n");
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "media hub not connect, ignore \n");
         }
     }
     switch_mutex_unlock(ctx->mutex);
