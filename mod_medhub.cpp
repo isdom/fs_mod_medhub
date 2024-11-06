@@ -1156,7 +1156,7 @@ SWITCH_STANDARD_API(mod_medhub_debug) {
     return SWITCH_STATUS_SUCCESS;
 }
 
-static medhub_context_t *init_medhub_ctx_for(switch_core_session_t *session, const char *url, const char* uuid) {
+static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) {
     switch_core_session_t *session4connect = switch_core_session_force_locate(uuid);
     if (!session4connect) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
@@ -1176,11 +1176,11 @@ static medhub_context_t *init_medhub_ctx_for(switch_core_session_t *session, con
     ctx->stopped = 0;
     ctx->starting = 0;
     ctx->session = session4connect;
-    ctx->medhub_url = switch_core_session_strdup(session, url);
-    switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+    ctx->medhub_url = switch_core_session_strdup(session4connect, url);
+    switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session4connect));
 
     {
-        switch_channel_t *channel = switch_core_session_get_channel(session);
+        switch_channel_t *channel = switch_core_session_get_channel(session4connect);
         switch_channel_set_private(channel, "_medhub_ctx", ctx);
     }
 
@@ -1192,6 +1192,40 @@ end:
     //  We meet : ... Locked, Waiting on external entities
     switch_core_session_rwunlock(session4connect);
     return ctx;
+}
+
+static void connect_medhub(medhub_context_t *ctx) {
+    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+        switch_mutex_lock(ctx->mutex);
+        if (ctx->started == 0) {
+            if (ctx->starting == 0) {
+                ctx->starting = 1;
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Connecting to Media Hub %s \n", ctx->medhub_url);
+                }
+                switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+                medhub_client *client = generateMediaHubClient(ctx);
+                ctx->client = client;
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Init Media Hub Client.%s\n",
+                                      switch_channel_get_name(channel));
+                }
+
+                if (ctx->client->connect(std::string(ctx->medhub_url)) < 0) {
+                    ctx->stopped = 1;
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                                      "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
+                                      ctx->medhub_url, switch_channel_get_name(channel));
+                    ctx->client->stop();
+                    delete ctx->client;
+                    ctx->client = nullptr;
+                    // start()失败，释放request对象
+                }
+            }
+        }
+        switch_mutex_unlock(ctx->mutex);
+        switch_core_session_rwunlock(ctx->session);
+    }
 }
 
 // uuid_connect_medhub <uuid> url=<uri>
@@ -1247,41 +1281,7 @@ SWITCH_STANDARD_API(uuid_connect_medhub_function) {
         switch_goto_status(SWITCH_STATUS_SUCCESS, end);
     }
 
-    {
-        medhub_context_t *ctx = init_medhub_ctx_for(session, _hub_url, argv[0]);
-
-        if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
-            switch_mutex_lock(ctx->mutex);
-            if (ctx->started == 0) {
-                if (ctx->starting == 0) {
-                    ctx->starting = 1;
-                    if (medhub_globals->_debug) {
-                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Connecting to Media Hub %s \n", ctx->medhub_url);
-                    }
-                    switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-                    medhub_client *client = generateMediaHubClient(ctx);
-                    ctx->client = client;
-                    if (medhub_globals->_debug) {
-                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Init Media Hub Client.%s\n",
-                                          switch_channel_get_name(channel));
-                    }
-
-                    if (ctx->client->connect(std::string(ctx->medhub_url)) < 0) {
-                        ctx->stopped = 1;
-                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                                          "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
-                                          ctx->medhub_url, switch_channel_get_name(channel));
-                        ctx->client->stop();
-                        delete ctx->client;
-                        ctx->client = nullptr;
-                        // start()失败，释放request对象
-                    }
-                }
-            }
-            switch_mutex_unlock(ctx->mutex);
-            switch_core_session_rwunlock(ctx->session);
-        }
-    }
+    connect_medhub(init_medhub_ctx_for(_hub_url, argv[0]));
 end:
     switch_core_destroy_memory_pool(&pool);
     return status;
