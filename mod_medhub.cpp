@@ -761,10 +761,10 @@ private:
 #define MAX_FRAME_BUFFER_SIZE (1024*1024) //1MB
 #define SAMPLE_RATE 8000
 
-medhub_client *generateAsrClient(medhub_context_t *ctx) {
+medhub_client *generateMediaHubClient(medhub_context_t *ctx) {
     auto *client = new medhub_client(1, ctx);
     if (!client) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "generateAsrClient failed.\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "generateMediaHubClient failed.\n");
         return nullptr;
     }
 
@@ -799,6 +799,8 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
 static void stop_medhub(medhub_context_t *ctx);
 
 static void destroy_medhub(medhub_context_t *ctx);
+
+static void init_medhub_ctx_for(switch_core_session_t *session, const char *_hub_url, char *const *argv);
 
 static const asr_provider_t medhub_funcs = {
         init_medhub,
@@ -859,6 +861,7 @@ switch_state_handler_table_t medhub_cs_handlers = {
 #define MAX_API_ARGC 20
 
 static void *init_medhub(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd) {
+    /*
     char *_hub_url = nullptr;
 
     switch_memory_pool_t *pool;
@@ -907,6 +910,18 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
     ctx->session = session;
     ctx->medhub_url = switch_core_session_strdup(session, _hub_url);
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+     */
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "init_medhub:%s\n", switch_channel_get_name(channel));
+    }
+
+    medhub_context_t *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    if (!ctx) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "init_medhub failed, can't found medhub ctx by %s\n",
+                          switch_channel_get_name(channel));
+        return nullptr;
+    }
 
     if (read_impl->actual_samples_per_second != SAMPLE_RATE) {
         if (switch_resample_create(&ctx->re_sampler,
@@ -915,12 +930,8 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
                                    16 * (read_impl->microseconds_per_packet / 1000) * 2,
                                    SWITCH_RESAMPLE_QUALITY,
                                    1) != SWITCH_STATUS_SUCCESS) {
-            // release all resource alloc before
-            switch_mutex_destroy(ctx->mutex);
-
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Unable to allocate re_sampler\n");
-            ctx = nullptr;
-            goto end;
+            return nullptr;
         }
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
@@ -929,6 +940,7 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
         }
     }
 
+    /*
     {
         switch_channel_t *channel = switch_core_session_get_channel(session);
         switch_channel_set_private(channel, "_medhub_ctx", ctx);
@@ -939,6 +951,7 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
 
 end:
     switch_core_destroy_memory_pool(&pool);
+     */
     return ctx;
 }
 
@@ -949,6 +962,7 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
         return ret_val;
     }
 
+    /*
     switch_mutex_lock(ctx->mutex);
     if (ctx->started == 0) {
         if (ctx->starting == 0) {
@@ -958,7 +972,7 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
             }
             switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
             ctx->asr_callback = asr_callback;
-            medhub_client *client = generateAsrClient(ctx);
+            medhub_client *client = generateMediaHubClient(ctx);
             if (!client) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Asr Client init failed.%s\n",
                                   switch_channel_get_name(channel));
@@ -989,6 +1003,8 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
 
     unlock:
     switch_mutex_unlock(ctx->mutex);
+     */
+    ret_val = true;
     return ret_val;
 }
 
@@ -1126,6 +1142,137 @@ SWITCH_STANDARD_API(mod_medhub_debug) {
         }
     }
     return SWITCH_STATUS_SUCCESS;
+}
+
+static medhub_context_t *init_medhub_ctx_for(switch_core_session_t *session, const char *url, const char* uuid) {
+    switch_core_session_t *session4connect = switch_core_session_force_locate(uuid);
+    if (!session4connect) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "uuid_connect_medhub failed, can't found session by %s\n", uuid);
+        // switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+        return nullptr;
+    }
+
+    medhub_context_t *ctx;
+    if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session4connect, sizeof(medhub_context_t)))) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "uuid_connect_medhub failed, can't alloc session ctx for %s\n", uuid);
+        goto end;
+    }
+
+    ctx->started = 0;
+    ctx->stopped = 0;
+    ctx->starting = 0;
+    ctx->session = session4connect;
+    ctx->medhub_url = switch_core_session_strdup(session, url);
+    switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
+
+    {
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        switch_channel_set_private(channel, "_medhub_ctx", ctx);
+    }
+
+    // increment medhub concurrent count
+    switch_atomic_inc(&medhub_globals->medhub_concurrent_cnt);
+
+end:
+    // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+    //  We meet : ... Locked, Waiting on external entities
+    switch_core_session_rwunlock(session4connect);
+    return ctx;
+}
+
+// uuid_connect_medhub <uuid> url=<uri>
+SWITCH_STANDARD_API(uuid_connect_medhub_function) {
+    if (zstr(cmd)) {
+        stream->write_function(stream, "uuid_connect_medhub: parameter missing.\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "uuid_connect_medhub: parameter missing.\n");
+        return SWITCH_STATUS_SUCCESS;
+    }
+
+    switch_status_t status = SWITCH_STATUS_SUCCESS;
+    char *_hub_url = nullptr;
+
+    switch_memory_pool_t *pool;
+    switch_core_new_memory_pool(&pool);
+    char *my_cmd = switch_core_strdup(pool, cmd);
+
+    char *argv[MAX_API_ARGC];
+    memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
+
+    int argc = switch_split(my_cmd, ' ', argv);
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "uuid_connect_medhub: cmd[%s], argc[%d]\n", my_cmd,
+                          argc);
+    }
+
+    if (argc < 1) {
+        stream->write_function(stream, "uuid is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    for (int idx = 1; idx < MAX_API_ARGC; idx++) {
+        if (argv[idx]) {
+            char *ss[2] = {nullptr, nullptr};
+            int cnt = switch_split(argv[idx], '=', ss);
+            if (cnt == 2) {
+                char *var = ss[0];
+                char *val = ss[1];
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
+                                      "uuid_connect_medhub: process arg[%s = %s]\n", var, val);
+                }
+                if (!strcasecmp(var, "url")) {
+                    _hub_url = val;
+                    continue;
+                }
+            }
+        }
+    }
+
+    if (!_hub_url) {
+        stream->write_function(stream, "url is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    {
+        medhub_context_t *ctx = init_medhub_ctx_for(session, _hub_url, argv[0]);
+
+        if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+            switch_mutex_lock(ctx->mutex);
+            if (ctx->started == 0) {
+                if (ctx->starting == 0) {
+                    ctx->starting = 1;
+                    if (medhub_globals->_debug) {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Connecting to Media Hub %s \n", ctx->medhub_url);
+                    }
+                    switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+                    medhub_client *client = generateMediaHubClient(ctx);
+                    ctx->client = client;
+                    if (medhub_globals->_debug) {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Init Media Hub Client.%s\n",
+                                          switch_channel_get_name(channel));
+                    }
+
+                    if (ctx->client->connect(std::string(ctx->medhub_url)) < 0) {
+                        ctx->stopped = 1;
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                                          "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
+                                          ctx->medhub_url, switch_channel_get_name(channel));
+                        ctx->client->stop();
+                        delete ctx->client;
+                        ctx->client = nullptr;
+                        // start()失败，释放request对象
+                    }
+                }
+            }
+            switch_mutex_unlock(ctx->mutex);
+            switch_core_session_rwunlock(ctx->session);
+        }
+    }
+end:
+    switch_core_destroy_memory_pool(&pool);
+    return status;
 }
 
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
@@ -1407,6 +1554,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
 
     // register global state handlers
     switch_core_add_state_handler(&medhub_cs_handlers);
+
+    SWITCH_ADD_API(api_interface,
+                   "uuid_connect_medhub",
+                   "uuid_connect_medhub api",
+                   uuid_connect_medhub_function,
+                   "<cmd><args>");
 
     SWITCH_ADD_API(api_interface,
                    "hub_uuid_play",
