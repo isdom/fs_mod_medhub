@@ -614,8 +614,6 @@ public:
             scoped_lock guard(m_lock);
             m_open = true;
         }
-        // onTranscriptionStarted(m_asr_ctx);
-        startTranscription();
     }
 
     // The close handler will signal that we should stop sending data
@@ -628,7 +626,6 @@ public:
             scoped_lock guard(m_lock);
             m_done = true;
         }
-        // onTranscriptionCompleted(m_asr_ctx);
     }
 
     // The fail handler will signal that we should stop sending data
@@ -1004,6 +1001,21 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
     unlock:
     switch_mutex_unlock(ctx->mutex);
      */
+
+    switch_mutex_lock(ctx->mutex);
+    ctx->asr_callback = asr_callback;
+    if (ctx->client) {
+        if (ctx->started) {
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Transaction \n");
+            }
+            ctx->client->startTranscription();
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Media Hub not connect, ignore \n");
+        }
+    }
+    switch_mutex_unlock(ctx->mutex);
+
     ret_val = true;
     return ret_val;
 }
