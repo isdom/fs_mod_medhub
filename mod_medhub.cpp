@@ -1004,7 +1004,7 @@ static void destroy_medhub(medhub_context_t *ctx) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
     if (!medhub_ctx) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]'s medhub_context is nullptr",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "destroy_medhub: [%s]'s medhub_context is nullptr, destroy_medhub called before",
                           switch_core_session_get_uuid(session));
         return;
     }
@@ -1075,7 +1075,7 @@ static switch_status_t medhub_cleanup_on_channel_destroy(switch_core_session_t *
     switch_channel_t *channel = switch_core_session_get_channel(session);
     auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
     if (!medhub_ctx) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]'s medhub_context is nullptr",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "medhub_cleanup_on_channel_destroy: [%s]'s medhub_context is nullptr",
                           switch_core_session_get_uuid(session));
         goto unlock;
     }
