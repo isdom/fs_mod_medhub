@@ -862,62 +862,12 @@ switch_state_handler_table_t medhub_cs_handlers = {
 #define MAX_API_ARGC 20
 
 static void *init_medhub(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd) {
-    /*
-    char *_hub_url = nullptr;
-
-    switch_memory_pool_t *pool;
-    switch_core_new_memory_pool(&pool);
-    char *my_cmd = switch_core_strdup(pool, cmd);
-
-    char *argv[MAX_API_ARGC];
-    memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
-
-    int argc = switch_split(my_cmd, ' ', argv);
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "cmd:%s, args count: %d\n", my_cmd, argc);
-    }
-
-    for (int idx = 1; idx < MAX_API_ARGC; idx++) {
-        if (argv[idx]) {
-            char *ss[2] = {nullptr, nullptr};
-            int cnt = switch_split(argv[idx], '=', ss);
-            if (cnt == 2) {
-                char *var = ss[0];
-                char *val = ss[1];
-                if (medhub_globals->_debug) {
-                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "process arg: %s = %s\n", var, val);
-                }
-                if (!strcasecmp(var, "proxyurl")) {
-                    _hub_url = val;
-                    continue;
-                }
-            }
-        }
-    }
-
-    if (!_hub_url) {
-        switch_core_destroy_memory_pool(&pool);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "proxyurl is required.\n");
-        return nullptr;
-    }
-
-    medhub_context_t *ctx;
-    if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session, sizeof(medhub_context_t)))) {
-        goto end;
-    }
-    ctx->started = 0;
-    ctx->stopped = 0;
-    ctx->starting = 0;
-    ctx->session = session;
-    ctx->medhub_url = switch_core_session_strdup(session, _hub_url);
-    switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
-     */
     switch_channel_t *channel = switch_core_session_get_channel(session);
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "init_medhub:%s\n", switch_channel_get_name(channel));
     }
 
-    medhub_context_t *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
     if (!ctx) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "init_medhub failed, can't found medhub ctx by %s\n",
                           switch_channel_get_name(channel));
@@ -944,18 +894,6 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
                       read_impl->samples_per_packet, read_impl->samples_per_second, read_impl->actual_samples_per_second,
                       read_impl->microseconds_per_packet);
 
-    /*
-    {
-        switch_channel_t *channel = switch_core_session_get_channel(session);
-        switch_channel_set_private(channel, "_medhub_ctx", ctx);
-    }
-
-    // increment medhub concurrent count
-    switch_atomic_inc(&medhub_globals->medhub_concurrent_cnt);
-
-end:
-    switch_core_destroy_memory_pool(&pool);
-     */
     return ctx;
 }
 
@@ -965,50 +903,6 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "start_medhub: ctx->stopped\n");
         return ret_val;
     }
-
-    /*
-    switch_mutex_lock(ctx->mutex);
-    if (ctx->started == 0) {
-        if (ctx->starting == 0) {
-            ctx->starting = 1;
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Transaction \n");
-            }
-            switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-            ctx->asr_callback = asr_callback;
-            medhub_client *client = generateMediaHubClient(ctx);
-            if (!client) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Asr Client init failed.%s\n",
-                                  switch_channel_get_name(channel));
-                ret_val = false;
-                goto unlock;
-            }
-            ctx->client = client;
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Init Fun Asr Client.%s\n",
-                                  switch_channel_get_name(channel));
-            }
-
-            if (ctx->client->connect(std::string(ctx->medhub_url)) < 0) {
-                ctx->stopped = 1;
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                                  "start() failed. may be can not connect server(%s). please check network or firewalld:%s\n",
-                                  ctx->medhub_url, switch_channel_get_name(channel));
-                ctx->client->stop();
-                delete ctx->client;
-                ctx->client = nullptr;
-                // start()失败，释放request对象
-                ret_val = false;
-                goto unlock;
-            }
-            ret_val = true;
-        }
-    }
-
-    unlock:
-    switch_mutex_unlock(ctx->mutex);
-     */
-
     switch_mutex_lock(ctx->mutex);
     ctx->asr_callback = asr_callback;
     if (ctx->client) {
@@ -1108,6 +1002,14 @@ static void stop_medhub(medhub_context_t *ctx) {
 static void destroy_medhub(medhub_context_t *ctx) {
     switch_core_session_t *session = ctx->session;
     switch_channel_t *channel = switch_core_session_get_channel(session);
+    auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    if (!medhub_ctx) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]'s medhub_context is nullptr",
+                          switch_core_session_get_uuid(session));
+        return;
+    }
+    switch_channel_set_private(channel, "_medhub_ctx", nullptr); // clear channel's private data for medhub_context
+
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
                           "destroy_medhub: release all resource for session -> on channel: %s\n",
@@ -1162,6 +1064,68 @@ SWITCH_STANDARD_API(mod_medhub_debug) {
     }
     return SWITCH_STATUS_SUCCESS;
 }
+
+static switch_status_t medhub_cleanup_on_channel_destroy(switch_core_session_t *session) {
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                          "medhub_cleanup_on_channel_destroy: try to cleanup medhub_context on session [%s] destroy",
+                          switch_core_session_get_uuid(session));
+    }
+    switch_core_session_write_lock(session);
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    if (!medhub_ctx) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]'s medhub_context is nullptr",
+                          switch_core_session_get_uuid(session));
+        goto unlock;
+    }
+    destroy_medhub(medhub_ctx);
+
+    unlock:
+    switch_core_session_rwunlock(session);
+    return SWITCH_STATUS_SUCCESS;
+}
+
+const static switch_state_handler_table_t session_medhub_handlers = {
+        /*! executed when the state changes to init */
+        // switch_state_handler_t on_init;
+        nullptr,
+        /*! executed when the state changes to routing */
+        // switch_state_handler_t on_routing;
+        nullptr,
+        /*! executed when the state changes to execute */
+        // switch_state_handler_t on_execute;
+        nullptr,
+        /*! executed when the state changes to hangup */
+        // switch_state_handler_t on_hangup;
+        nullptr,
+        /*! executed when the state changes to exchange_media */
+        // switch_state_handler_t on_exchange_media;
+        nullptr,
+        /*! executed when the state changes to soft_execute */
+        // switch_state_handler_t on_soft_execute;
+        nullptr,
+        /*! executed when the state changes to consume_media */
+        // switch_state_handler_t on_consume_media;
+        nullptr,
+        /*! executed when the state changes to hibernate */
+        // switch_state_handler_t on_hibernate;
+        nullptr,
+        /*! executed when the state changes to reset */
+        // switch_state_handler_t on_reset;
+        nullptr,
+        /*! executed when the state changes to park */
+        // switch_state_handler_t on_park;
+        nullptr,
+        /*! executed when the state changes to reporting */
+        // switch_state_handler_t on_reporting;
+        nullptr,
+        /*! executed when the state changes to destroy */
+        // switch_state_handler_t on_destroy;
+        medhub_cleanup_on_channel_destroy,
+        // int flags;
+        0
+};
 
 static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) {
     switch_core_session_t *session = switch_core_session_force_locate(uuid);
@@ -1226,6 +1190,16 @@ static void connect_medhub(medhub_context_t *ctx) {
                     delete ctx->client;
                     ctx->client = nullptr;
                     // start()失败，释放request对象
+                }
+
+                if (switch_channel_add_state_handler(channel, &session_medhub_handlers) < 0) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "connect_medhub: session [%s] hook channel state change failed!\n",
+                                      switch_channel_get_name(channel));
+                } else {
+                    if (medhub_globals->_debug) {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "connect_medhub: session [%s] hook channel state change success!\n",
+                                          switch_channel_get_name(channel));
+                    }
                 }
             }
         }
