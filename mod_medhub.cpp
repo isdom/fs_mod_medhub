@@ -801,8 +801,6 @@ static void stop_medhub(medhub_context_t *ctx);
 
 static void destroy_medhub(medhub_context_t *ctx);
 
-static void init_medhub_ctx_for(switch_core_session_t *session, const char *_hub_url, char *const *argv);
-
 static const asr_provider_t medhub_funcs = {
         init_medhub,
         reinterpret_cast<asr_start_func_t>(start_medhub),
