@@ -75,13 +75,17 @@ typedef struct {
 typedef struct {
     switch_core_session_t   *session;
     medhub_client         *client;
+
+    //  asr fields
     int started;
     int stopped;
     int starting;
     switch_mutex_t          *mutex;
     switch_audio_resampler_t *re_sampler;
-char                        *medhub_url;
+    char                    *medhub_url;
     asr_callback_t          *asr_callback;
+
+    // playback fields
     switch_codec_t          playback_codec;
     uint32_t                playback_rate;
     int32_t                 playback_channels;
@@ -674,8 +678,10 @@ public:
         };
 
         const std::string str_playback = json_playback.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "playback: send Playback command, detail: %s\n",
-                          str_playback.c_str());
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "playback: send Playback command, detail: %s\n",
+                              str_playback.c_str());
+        }
 
         websocketpp::lib::error_code ec;
         m_client.send(m_hdl, str_playback, websocketpp::frame::opcode::text, ec);
