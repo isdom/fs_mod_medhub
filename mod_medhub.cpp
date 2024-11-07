@@ -661,7 +661,7 @@ public:
         m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
-    void playback(const char *filename) {
+    void playback(const char *filename, int stream_id) {
         nlohmann::json json_playback = {
                 {"header", {
                         // 当次消息请求ID，随机生成32位唯一ID。
@@ -676,6 +676,9 @@ public:
                        {"file", filename}
                 }}
         };
+        if (stream_id) {
+            json_playback["payload"]["id"] = stream_id;
+        }
 
         const std::string str_playback = json_playback.dump();
         if (medhub_globals->_debug) {
@@ -1359,7 +1362,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                               argv[0]);
         }
         else {
-            ctx->client->playback(_file);
+            ctx->client->playback(_file, 1);
         }
 
         // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
