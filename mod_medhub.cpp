@@ -90,6 +90,9 @@ typedef struct {
     uint32_t                playback_rate;
     int32_t                 playback_channels;
     uint32_t                playback_timestamp;
+    int                     current_playback_id;
+    int                     last_playback_samples;
+    bool                    last_playback_completed;
 } medhub_context_t;
 
 /**
@@ -295,6 +298,7 @@ void onPlaybackStart(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             "name": "PlaybackStart",
         },
         "payload": {
+            "id": 4,
             "file": "...",
             "rate": 8000,
             "interval": 20,
@@ -302,14 +306,17 @@ void onPlaybackStart(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         }
     } */
     const std::string filename = hub_event["payload"]["file"];
+    const int id = hub_event["payload"]["id"];
     const uint32_t rate = hub_event["payload"]["rate"];
     const int32_t interval = hub_event["payload"]["interval"];
     const int32_t channels = hub_event["payload"]["channels"];
+
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
     }
 
-    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+    switch_core_session_write_lock(ctx->session);
+
         if (switch_core_codec_init(&ctx->playback_codec,
                                    "L16",
                                    NULL,
@@ -334,12 +341,12 @@ void onPlaybackStart(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         ctx->playback_rate = rate;
         ctx->playback_channels = channels;
         ctx->playback_timestamp = 0;
+        ctx->current_playback_id = id;
 
         switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
         switch_channel_set_private(channel, "znc_playing", "1");
 
-        switch_core_session_rwunlock(ctx->session);
-    }
+    switch_core_session_rwunlock(ctx->session);
 }
 
 void onPlaybackStop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
@@ -357,17 +364,17 @@ void onPlaybackStop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     const std::string filename = hub_event["payload"]["file"];
     const int samples = hub_event["payload"]["samples"];
     const bool completed = hub_event["payload"]["completed"];
+
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
                           "recv PlaybackStop event: file: %s/samples: %d/completed: %d\n",
                           filename.c_str(), samples, completed);
     }
 
-    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+    switch_core_session_write_lock(ctx->session);
         switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
         switch_channel_set_private(channel, "znc_playing", nullptr);
-        switch_core_session_rwunlock(ctx->session);
-    }
+    switch_core_session_rwunlock(ctx->session);
 }
 
 void onPlaybackData(medhub_context_t *ctx, uint8_t *data, int32_t len) {
