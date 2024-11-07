@@ -1164,44 +1164,43 @@ SWITCH_STANDARD_API(mod_medhub_debug) {
 }
 
 static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) {
-    switch_core_session_t *session4connect = switch_core_session_force_locate(uuid);
-    if (!session4connect) {
+    switch_core_session_t *session = switch_core_session_force_locate(uuid);
+    if (!session) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-                          "uuid_connect_medhub failed, can't found session by %s\n", uuid);
-        // switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+                          "init_medhub_ctx_for failed, can't found session by %s\n", uuid);
         return nullptr;
     }
 
     medhub_context_t *ctx;
-    if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session4connect, sizeof(medhub_context_t)))) {
+    if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session, sizeof(medhub_context_t)))) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-                          "uuid_connect_medhub failed, can't alloc session ctx for %s\n", uuid);
-        goto end;
+                          "init_medhub_ctx_for failed, can't alloc session ctx for %s\n", uuid);
+        goto unlock;
     }
 
     ctx->started = 0;
     ctx->stopped = 0;
     ctx->starting = 0;
-    ctx->session = session4connect;
-    ctx->medhub_url = switch_core_session_strdup(session4connect, url);
-    switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session4connect));
+    ctx->session = session;
+    ctx->medhub_url = switch_core_session_strdup(session, url);
+    switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
-    {
-        switch_channel_t *channel = switch_core_session_get_channel(session4connect);
-        switch_channel_set_private(channel, "_medhub_ctx", ctx);
-    }
+    switch_channel_set_private(switch_core_session_get_channel(session), "_medhub_ctx", ctx);
 
     // increment medhub concurrent count
     switch_atomic_inc(&medhub_globals->medhub_concurrent_cnt);
 
-end:
+    unlock:
     // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
     //  We meet : ... Locked, Waiting on external entities
-    switch_core_session_rwunlock(session4connect);
+    switch_core_session_rwunlock(session);
     return ctx;
 }
 
 static void connect_medhub(medhub_context_t *ctx) {
+    if (!ctx) {
+        return;
+    }
     if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
         switch_mutex_lock(ctx->mutex);
         if (ctx->started == 0) {
@@ -1244,7 +1243,7 @@ SWITCH_STANDARD_API(uuid_connect_medhub_function) {
     }
 
     switch_status_t status = SWITCH_STATUS_SUCCESS;
-    char *_hub_url = nullptr;
+    const char *_hub_url = nullptr;
 
     switch_memory_pool_t *pool;
     switch_core_new_memory_pool(&pool);
@@ -1368,7 +1367,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_play:%s\n", switch_channel_get_name(channel));
         }
 
-        medhub_context_t *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
         if (!ctx) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found medhub ctx by %s\n",
                               argv[0]);
