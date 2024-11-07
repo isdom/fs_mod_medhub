@@ -222,7 +222,27 @@ void onChannelClosed(medhub_context_t *ctx) {
      */
 }
 
-void onPlaybackStart(medhub_context_t *ctx, uint32_t rate, int32_t interval, int32_t channels) {
+void onPlaybackStart(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* PlaybackStart 事件
+    {
+        "header": {
+            "name": "PlaybackStart",
+        },
+        "payload": {
+            "file": "...",
+            "rate": 8000,
+            "interval": 20,
+            "channels": 1
+        }
+    } */
+    const std::string filename = hub_event["payload"]["file"];
+    const uint32_t rate = hub_event["payload"]["rate"];
+    const int32_t interval = hub_event["payload"]["interval"];
+    const int32_t channels = hub_event["payload"]["channels"];
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
+    }
+
     if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
         if (switch_core_codec_init(&ctx->playback_codec,
                                    "L16",
@@ -256,7 +276,27 @@ void onPlaybackStart(medhub_context_t *ctx, uint32_t rate, int32_t interval, int
     }
 }
 
-void onPlaybackStop(medhub_context_t *ctx, const char *file) {
+void onPlaybackStop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* PlaybackStop 事件
+    {
+        "header": {
+            "name": "PlaybackStop",
+        },
+        "payload": {
+            "file": "...",
+            "samples":38880,
+            "completed":true
+        }
+    } */
+    const std::string filename = hub_event["payload"]["file"];
+    const int samples = hub_event["payload"]["samples"];
+    const bool completed = hub_event["payload"]["completed"];
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                          "recv PlaybackStop event: file: %s/samples: %d/completed: %d\n",
+                          filename.c_str(), samples, completed);
+    }
+
     if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
         switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
         switch_channel_set_private(channel, "znc_playing", nullptr);
@@ -453,41 +493,9 @@ public:
                     };
                     onSentenceEnd(m_asr_ctx, &asr_sentence_result);
                 } else if (hubevent["header"]["name"] == "PlaybackStart") {
-                    /* PlaybackStart 事件
-                    {
-                        "header": {
-                            "name": "PlaybackStart",
-                        },
-                        "payload": {
-                            "file": "...",
-                            "rate": 8000,
-                            "interval": 20,
-                            "channels": 1
-                        }
-                    } */
-                    std::string filename = hubevent["payload"]["file"];
-                    uint32_t rate = hubevent["payload"]["rate"];
-                    int32_t interval = hubevent["payload"]["interval"];
-                    int32_t channels = hubevent["payload"]["channels"];
-                    if (medhub_globals->_debug) {
-                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
-                    }
-                    onPlaybackStart(m_asr_ctx, rate, interval, channels);
+                    onPlaybackStart(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStop") {
-                    /* PlaybackStop 事件
-                    {
-                        "header": {
-                            "name": "PlaybackStop",
-                        },
-                        "payload": {
-                            "file": "..."
-                        }
-                    } */
-                    std::string filename = hubevent["payload"]["file"];
-                    if (medhub_globals->_debug) {
-                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStop event: %s\n", filename.c_str());
-                    }
-                    onPlaybackStop(m_asr_ctx, filename.c_str());
+                    onPlaybackStop(m_asr_ctx, hubevent);
                 }
             }
                 break;
