@@ -93,7 +93,21 @@ char                        *medhub_url;
  *
  * @param ctx
  */
-void onTranscriptionStarted(medhub_context_t *ctx) {
+void onTranscriptionStarted(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* TranscriptionStarted 事件
+    {
+        "header": {
+            "message_id": "05450bf69c53413f8d88aed1ee60****",
+            "task_id": "640bc797bb684bd6960185651307****",
+            "namespace": "FlowingSpeechSynthesizer",
+            "name": "TranscriptionStarted",
+            "status": 20000000,
+            "status_message": "GATEWAY|SUCCESS|Success."
+        },
+        "payload": {
+            "session_id": "1231231dfdf****"
+        }
+    } */
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionStarted: medhub\n");
     }
@@ -117,7 +131,17 @@ void onTranscriptionStarted(medhub_context_t *ctx) {
  *
  * @param ctx
  */
-void onSentenceBegin(medhub_context_t *ctx) {
+void onSentenceBegin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* SentenceBegin 事件
+    {
+        "header": {
+            "name": "SentenceBegin",
+        },
+        "payload": {
+            "index": 1,
+            "time": 320
+        }
+    } */
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceBegin: medhub\n");
     }
@@ -132,7 +156,27 @@ void onSentenceBegin(medhub_context_t *ctx) {
  * @param ctx
  * @param text
  */
-void onSentenceEnd(medhub_context_t *ctx, asr_sentence_result_t *asr_sentence_result) {
+void onSentenceEnd(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* SentenceEnd 事件
+    {
+        "header": {
+            "name": "SentenceEnd",
+        },
+        "payload": {
+            "index": 1,
+            "time": 3260,
+            "begin_time": 1800,
+            "result": "今年双十一我要买电视"
+        }
+    } */
+    std::string result = hub_event["payload"]["result"];
+    asr_sentence_result_t asr_sentence_result = {
+            hub_event["payload"]["index"],
+            hub_event["payload"]["begin_time"],
+            hub_event["payload"]["time"],
+            hub_event["payload"]["confidence"],
+            result.c_str()
+    };
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: medhub\n");
     }
@@ -140,7 +184,7 @@ void onSentenceEnd(medhub_context_t *ctx, asr_sentence_result_t *asr_sentence_re
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: call on_asr_sentence_end_func %p\n", ctx->asr_callback->on_asr_sentence_end_func);
         }
-        ctx->asr_callback->on_asr_sentence_end_func(ctx->asr_callback->asr_caller, asr_sentence_result);
+        ctx->asr_callback->on_asr_sentence_end_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "onSentenceEnd: ctx->asr_callback is null\n");
     }
@@ -152,7 +196,19 @@ void onSentenceEnd(medhub_context_t *ctx, asr_sentence_result_t *asr_sentence_re
  * @param ctx
  * @param text
  */
-void onTranscriptionResultChanged(medhub_context_t *ctx, const std::string &text) {
+void onTranscriptionResultChanged(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* TranscriptionResultChanged 事件
+    {
+        "header": {
+            "name": "TranscriptionResultChanged",
+        },
+        "payload": {
+            "index":1,
+            "time":1800,
+            "result":"今年双十一"
+        }
+    } */
+    std::string result = hub_event["payload"]["result"];
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionResultChanged: medhub\n");
     }
@@ -165,7 +221,7 @@ void onTranscriptionResultChanged(medhub_context_t *ctx, const std::string &text
                 -1,
                 -1,
                 0.0,
-                text.c_str()
+                result.c_str()
         };
         ctx->asr_callback->on_asr_result_changed_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
     } else {
@@ -178,7 +234,13 @@ void onTranscriptionResultChanged(medhub_context_t *ctx, const std::string &text
  *
  * @param ctx
  */
-void onTranscriptionCompleted(medhub_context_t *ctx) {
+void onTranscriptionCompleted(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* TranscriptionCompleted 事件
+    {
+        "header": {
+            "name": "TranscriptionCompleted",
+        }
+    } */
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTranscriptionCompleted: medhub\n");
     }
@@ -413,29 +475,9 @@ public:
                 }
 
                 if (hubevent["header"]["name"] == "TranscriptionStarted") {
-                    /* TranscriptionStarted 事件
-                    {
-                        "header": {
-                            "message_id": "05450bf69c53413f8d88aed1ee60****",
-                            "task_id": "640bc797bb684bd6960185651307****",
-                            "namespace": "FlowingSpeechSynthesizer",
-                            "name": "TranscriptionStarted",
-                            "status": 20000000,
-                            "status_message": "GATEWAY|SUCCESS|Success."
-                        },
-                        "payload": {
-                            "session_id": "1231231dfdf****"
-                        }
-                    } */
-                    onTranscriptionStarted(m_asr_ctx);
+                    onTranscriptionStarted(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionCompleted") {
-                    /* TranscriptionCompleted 事件
-                    {
-                        "header": {
-                            "name": "TranscriptionCompleted",
-                        }
-                    } */
-                    onTranscriptionCompleted(m_asr_ctx);
+                    onTranscriptionCompleted(m_asr_ctx, hubevent);
                     {
                         websocketpp::lib::error_code ec;
                         m_client.close(hdl, websocketpp::close::status::going_away, "", ec);
@@ -445,53 +487,11 @@ public:
                         }
                     }
                 } else if (hubevent["header"]["name"] == "SentenceBegin") {
-                    /* SentenceBegin 事件
-                    {
-                        "header": {
-                            "name": "SentenceBegin",
-                        },
-                        "payload": {
-                            "index": 1,
-                            "time": 320
-                        }
-                    } */
-                    onSentenceBegin(m_asr_ctx);
+                    onSentenceBegin(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionResultChanged") {
-                    /* TranscriptionResultChanged 事件
-                    {
-                        "header": {
-                            "name": "TranscriptionResultChanged",
-                        },
-                        "payload": {
-                            "index":1,
-                            "time":1800,
-                            "result":"今年双十一"
-                        }
-                    } */
-                    std::string result = hubevent["payload"]["result"];
-                    onTranscriptionResultChanged(m_asr_ctx, result);
+                    onTranscriptionResultChanged(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "SentenceEnd") {
-                    /* SentenceEnd 事件
-                    {
-                        "header": {
-                            "name": "SentenceEnd",
-                        },
-                        "payload": {
-                            "index": 1,
-                            "time": 3260,
-                            "begin_time": 1800,
-                            "result": "今年双十一我要买电视"
-                        }
-                    } */
-                    std::string result = hubevent["payload"]["result"];
-                    asr_sentence_result_t asr_sentence_result = {
-                            hubevent["payload"]["index"],
-                            hubevent["payload"]["begin_time"],
-                            hubevent["payload"]["time"],
-                            hubevent["payload"]["confidence"],
-                            result.c_str()
-                    };
-                    onSentenceEnd(m_asr_ctx, &asr_sentence_result);
+                    onSentenceEnd(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStart") {
                     onPlaybackStart(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStop") {
