@@ -100,7 +100,7 @@ typedef struct {
  *
  * @param ctx
  */
-void onTranscriptionStarted(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_transcription_started(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* TranscriptionStarted 事件
     {
         "header": {
@@ -116,7 +116,7 @@ void onTranscriptionStarted(medhub_context_t *ctx, const nlohmann::json &hub_eve
         }
     } */
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionStarted: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: medhub\n");
     }
     switch_mutex_lock(ctx->mutex);
     ctx->started = 1;
@@ -125,11 +125,11 @@ void onTranscriptionStarted(medhub_context_t *ctx, const nlohmann::json &hub_eve
 
     if (ctx->asr_callback) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionStarted: call on_asr_started_func %p\n", ctx->asr_callback->on_asr_started_func);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: call on_asr_started_func %p\n", ctx->asr_callback->on_asr_started_func);
         }
         ctx->asr_callback->on_asr_started_func(ctx->asr_callback->asr_caller);
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "onTranscriptionStarted: ctx->asr_callback is null\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_transcription_started: ctx->asr_callback is null\n");
     }
 }
 
@@ -138,7 +138,7 @@ void onTranscriptionStarted(medhub_context_t *ctx, const nlohmann::json &hub_eve
  *
  * @param ctx
  */
-void onSentenceBegin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* SentenceBegin 事件
     {
         "header": {
@@ -150,7 +150,7 @@ void onSentenceBegin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         }
     } */
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceBegin: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_begin: medhub\n");
     }
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
@@ -163,7 +163,7 @@ void onSentenceBegin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
  * @param ctx
  * @param text
  */
-void onSentenceEnd(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* SentenceEnd 事件
     {
         "header": {
@@ -185,15 +185,15 @@ void onSentenceEnd(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             result.c_str()
     };
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: medhub\n");
     }
     if (ctx->asr_callback) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onSentenceEnd: call on_asr_sentence_end_func %p\n", ctx->asr_callback->on_asr_sentence_end_func);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: call on_asr_sentence_end_func %p\n", ctx->asr_callback->on_asr_sentence_end_func);
         }
         ctx->asr_callback->on_asr_sentence_end_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "onSentenceEnd: ctx->asr_callback is null\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_sentence_end: ctx->asr_callback is null\n");
     }
 }
 
@@ -203,7 +203,7 @@ void onSentenceEnd(medhub_context_t *ctx, const nlohmann::json &hub_event) {
  * @param ctx
  * @param text
  */
-void onTranscriptionResultChanged(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_transcription_result_changed(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* TranscriptionResultChanged 事件
     {
         "header": {
@@ -217,11 +217,11 @@ void onTranscriptionResultChanged(medhub_context_t *ctx, const nlohmann::json &h
     } */
     std::string result = hub_event["payload"]["result"];
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "onTranscriptionResultChanged: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_result_changed: medhub\n");
     }
     if (ctx->asr_callback) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTranscriptionResultChanged: call on_asr_result_changed_func %p\n", ctx->asr_callback->on_asr_result_changed_func);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_transcription_result_changed: call on_asr_result_changed_func %p\n", ctx->asr_callback->on_asr_result_changed_func);
         }
         asr_sentence_result_t asr_sentence_result = {
                 -1,
@@ -232,7 +232,7 @@ void onTranscriptionResultChanged(medhub_context_t *ctx, const nlohmann::json &h
         };
         ctx->asr_callback->on_asr_result_changed_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "onTranscriptionResultChanged: ctx->asr_callback is null\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_transcription_result_changed: ctx->asr_callback is null\n");
     }
 }
 
@@ -241,7 +241,7 @@ void onTranscriptionResultChanged(medhub_context_t *ctx, const nlohmann::json &h
  *
  * @param ctx
  */
-void onTranscriptionCompleted(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_transcription_completed(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* TranscriptionCompleted 事件
     {
         "header": {
@@ -249,7 +249,7 @@ void onTranscriptionCompleted(medhub_context_t *ctx, const nlohmann::json &hub_e
         }
     } */
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTranscriptionCompleted: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_transcription_completed: medhub\n");
     }
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
@@ -261,9 +261,9 @@ void onTranscriptionCompleted(medhub_context_t *ctx, const nlohmann::json &hub_e
  *
  * @param ctx
  */
-void onTaskFailed(medhub_context_t *ctx) {
+void on_task_failed(medhub_context_t *ctx) {
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onTaskFailed: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_task_failed: medhub\n");
     }
     switch_mutex_lock(ctx->mutex);
     ctx->started = 0;
@@ -275,9 +275,9 @@ void onTaskFailed(medhub_context_t *ctx) {
  *
  * @param ctx
  */
-void onChannelClosed(medhub_context_t *ctx) {
+void on_channel_closed(medhub_context_t *ctx) {
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onChannelClosed: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_channel_closed: medhub\n");
     }
     /*
     if (ctx->asr_callback) {
@@ -286,12 +286,12 @@ void onChannelClosed(medhub_context_t *ctx) {
         }
         ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "onChannelClosed: ctx->asr_callback is null\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_channel_closed: ctx->asr_callback is null\n");
     }
      */
 }
 
-void onPlaybackStart(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStart 事件
     {
         "header": {
@@ -349,7 +349,7 @@ void onPlaybackStart(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     switch_core_session_rwunlock(ctx->session);
 }
 
-void onPlaybackStop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStop 事件
     {
         "header": {
@@ -377,7 +377,7 @@ void onPlaybackStop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     switch_core_session_rwunlock(ctx->session);
 }
 
-void onPlaybackData(medhub_context_t *ctx, uint8_t *data, int32_t len) {
+void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len) {
     switch_frame_t write_frame = { 0 };
     write_frame.codec = &ctx->playback_codec;
     write_frame.rate = ctx->playback_rate;
@@ -486,9 +486,9 @@ public:
                 }
 
                 if (hubevent["header"]["name"] == "TranscriptionStarted") {
-                    onTranscriptionStarted(m_asr_ctx, hubevent);
+                    on_transcription_started(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionCompleted") {
-                    onTranscriptionCompleted(m_asr_ctx, hubevent);
+                    on_transcription_completed(m_asr_ctx, hubevent);
                     {
                         websocketpp::lib::error_code ec;
                         m_client.close(hdl, websocketpp::close::status::going_away, "", ec);
@@ -498,20 +498,20 @@ public:
                         }
                     }
                 } else if (hubevent["header"]["name"] == "SentenceBegin") {
-                    onSentenceBegin(m_asr_ctx, hubevent);
+                    on_sentence_begin(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionResultChanged") {
-                    onTranscriptionResultChanged(m_asr_ctx, hubevent);
+                    on_transcription_result_changed(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "SentenceEnd") {
-                    onSentenceEnd(m_asr_ctx, hubevent);
+                    on_sentence_end(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStart") {
-                    onPlaybackStart(m_asr_ctx, hubevent);
+                    on_playback_start(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStop") {
-                    onPlaybackStop(m_asr_ctx, hubevent);
+                    on_playback_stop(m_asr_ctx, hubevent);
                 }
             }
                 break;
             case websocketpp::frame::opcode::binary:
-                onPlaybackData(m_asr_ctx, (uint8_t*)payload.data(), (int32_t)payload.size());
+                on_playback_data(m_asr_ctx, (uint8_t *) payload.data(), (int32_t) payload.size());
                 break;
             default:
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "un-handle opcode: %d\n", msg->get_opcode());
@@ -624,7 +624,7 @@ public:
         m_client.stop_perpetual();
         m_thread->join();
 
-        onChannelClosed(m_asr_ctx);
+        on_channel_closed(m_asr_ctx);
     }
 
     // The open handler will signal that we are ready to start sending data
@@ -661,7 +661,7 @@ public:
             scoped_lock guard(m_lock);
             m_done = true;
         }
-        onTaskFailed(m_asr_ctx);
+        on_task_failed(m_asr_ctx);
     }
 
     void sendAudio(uint8_t *dp, size_t data_len, websocketpp::lib::error_code &ec) {
