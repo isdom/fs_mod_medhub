@@ -1447,8 +1447,10 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                               argv[0]);
         }
         else {
-            ctx->current_stream_id = 0;   // clear current stream id
-            ctx->client->playback(_file, 0, 0);
+            if (ctx->current_stream_id == 0) {
+                ctx->current_stream_id = 0;   // clear current stream id
+                ctx->client->playback(_file, 0, 0);
+            }
         }
 
         // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
