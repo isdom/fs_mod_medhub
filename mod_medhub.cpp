@@ -837,12 +837,11 @@ void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     if (completed) {
         // playback completed, clear stream id
         ctx->current_stream_id = 0;
+        // switch_core_session_write_lock(ctx->session);
+        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+        switch_channel_set_private(channel, "znc_playing", nullptr);
+        // switch_core_session_rwunlock(ctx->session);
     }
-
-    // switch_core_session_write_lock(ctx->session);
-    switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-    switch_channel_set_private(channel, "znc_playing", nullptr);
-    // switch_core_session_rwunlock(ctx->session);
 }
 
 void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len) {
