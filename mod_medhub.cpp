@@ -90,7 +90,7 @@ typedef struct {
     uint32_t                playback_rate;
     int32_t                 playback_channels;
     uint32_t                playback_timestamp;
-    int                     current_playback_id;
+    int                     current_stream_id;
     int                     last_playback_samples;
     bool                    last_playback_completed;
 } medhub_context_t;
@@ -100,62 +100,14 @@ typedef struct {
  *
  * @param ctx
  */
-void on_transcription_started(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* TranscriptionStarted 事件
-    {
-        "header": {
-            "message_id": "05450bf69c53413f8d88aed1ee60****",
-            "task_id": "640bc797bb684bd6960185651307****",
-            "namespace": "FlowingSpeechSynthesizer",
-            "name": "TranscriptionStarted",
-            "status": 20000000,
-            "status_message": "GATEWAY|SUCCESS|Success."
-        },
-        "payload": {
-            "session_id": "1231231dfdf****"
-        }
-    } */
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: medhub\n");
-    }
-    switch_mutex_lock(ctx->mutex);
-    ctx->started = 1;
-    ctx->starting = 0;
-    switch_mutex_unlock(ctx->mutex);
-
-    if (ctx->asr_callback) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: call on_asr_started_func %p\n", ctx->asr_callback->on_asr_started_func);
-        }
-        ctx->asr_callback->on_asr_started_func(ctx->asr_callback->asr_caller);
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_transcription_started: ctx->asr_callback is null\n");
-    }
-}
+void on_transcription_started(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 /**
  * @brief 一句话开始回调函数
  *
  * @param ctx
  */
-void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* SentenceBegin 事件
-    {
-        "header": {
-            "name": "SentenceBegin",
-        },
-        "payload": {
-            "index": 1,
-            "time": 320
-        }
-    } */
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_begin: medhub\n");
-    }
-    if (ctx->asr_callback) {
-        ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
-    }
-}
+void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 /**
  * @brief 一句话结束回调函数
@@ -163,39 +115,7 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
  * @param ctx
  * @param text
  */
-void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* SentenceEnd 事件
-    {
-        "header": {
-            "name": "SentenceEnd",
-        },
-        "payload": {
-            "index": 1,
-            "time": 3260,
-            "begin_time": 1800,
-            "result": "今年双十一我要买电视"
-        }
-    } */
-    std::string result = hub_event["payload"]["result"];
-    asr_sentence_result_t asr_sentence_result = {
-            hub_event["payload"]["index"],
-            hub_event["payload"]["begin_time"],
-            hub_event["payload"]["time"],
-            hub_event["payload"]["confidence"],
-            result.c_str()
-    };
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: medhub\n");
-    }
-    if (ctx->asr_callback) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: call on_asr_sentence_end_func %p\n", ctx->asr_callback->on_asr_sentence_end_func);
-        }
-        ctx->asr_callback->on_asr_sentence_end_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_sentence_end: ctx->asr_callback is null\n");
-    }
-}
+void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 /**
  * @brief 识别结果变化回调函数
@@ -203,193 +123,32 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
  * @param ctx
  * @param text
  */
-void on_transcription_result_changed(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* TranscriptionResultChanged 事件
-    {
-        "header": {
-            "name": "TranscriptionResultChanged",
-        },
-        "payload": {
-            "index":1,
-            "time":1800,
-            "result":"今年双十一"
-        }
-    } */
-    std::string result = hub_event["payload"]["result"];
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_result_changed: medhub\n");
-    }
-    if (ctx->asr_callback) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_transcription_result_changed: call on_asr_result_changed_func %p\n", ctx->asr_callback->on_asr_result_changed_func);
-        }
-        asr_sentence_result_t asr_sentence_result = {
-                -1,
-                -1,
-                -1,
-                0.0,
-                result.c_str()
-        };
-        ctx->asr_callback->on_asr_result_changed_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_transcription_result_changed: ctx->asr_callback is null\n");
-    }
-}
+void on_transcription_result_changed(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 /**
  * @brief 语音转写结束回调函数
  *
  * @param ctx
  */
-void on_transcription_completed(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* TranscriptionCompleted 事件
-    {
-        "header": {
-            "name": "TranscriptionCompleted",
-        }
-    } */
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_transcription_completed: medhub\n");
-    }
-    if (ctx->asr_callback) {
-        ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
-    }
-}
+void on_transcription_completed(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 /**
  * @brief 异常识别回调函数
  *
  * @param ctx
  */
-void on_task_failed(medhub_context_t *ctx) {
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_task_failed: medhub\n");
-    }
-    switch_mutex_lock(ctx->mutex);
-    ctx->started = 0;
-    switch_mutex_unlock(ctx->mutex);
-}
+void on_task_failed(medhub_context_t *ctx);
 
 /**
  * @brief 识别通道关闭回调函数
  *
  * @param ctx
  */
-void on_channel_closed(medhub_context_t *ctx) {
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_channel_closed: medhub\n");
-    }
-    /*
-    if (ctx->asr_callback) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onChannelClosed: call on_asr_stopped_func %p\n", ctx->asr_callback->on_asr_stopped_func);
-        }
-        ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_channel_closed: ctx->asr_callback is null\n");
-    }
-     */
-}
+void on_channel_closed(medhub_context_t *ctx);
 
-void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* PlaybackStart 事件
-    {
-        "header": {
-            "name": "PlaybackStart",
-        },
-        "payload": {
-            "id": 4,
-            "file": "...",
-            "rate": 8000,
-            "interval": 20,
-            "channels": 1
-        }
-    } */
-    const std::string filename = hub_event["payload"]["file"];
-    const int id = hub_event["payload"]["id"];
-    const uint32_t rate = hub_event["payload"]["rate"];
-    const int32_t interval = hub_event["payload"]["interval"];
-    const int32_t channels = hub_event["payload"]["channels"];
-
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
-    }
-
-    switch_core_session_write_lock(ctx->session);
-
-        if (switch_core_codec_init(&ctx->playback_codec,
-                                   "L16",
-                                   NULL,
-                                   NULL,
-                                   rate,
-                                   interval,
-                                   channels,
-                                   SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
-                                   NULL,
-                                   switch_core_session_get_pool(ctx->session)) ==
-            SWITCH_STATUS_SUCCESS) {
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
-                                  "Codec Activated %s@%uhz %u channels %dms\n",
-                                  "L16", rate, channels, interval);
-            }
-        } else {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_WARNING,
-                              "Raw Codec Activation Failed %s@%uhz %u channels %dms\n",
-                              "L16", rate, channels, interval);
-        }
-        ctx->playback_rate = rate;
-        ctx->playback_channels = channels;
-        ctx->playback_timestamp = 0;
-        ctx->current_playback_id = id;
-
-        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-        switch_channel_set_private(channel, "znc_playing", "1");
-
-    switch_core_session_rwunlock(ctx->session);
-}
-
-void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
-    /* PlaybackStop 事件
-    {
-        "header": {
-            "name": "PlaybackStop",
-        },
-        "payload": {
-            "file": "...",
-            "samples":38880,
-            "completed":true
-        }
-    } */
-    const std::string filename = hub_event["payload"]["file"];
-    const int samples = hub_event["payload"]["samples"];
-    const bool completed = hub_event["payload"]["completed"];
-
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                          "recv PlaybackStop event: file: %s/samples: %d/completed: %d\n",
-                          filename.c_str(), samples, completed);
-    }
-
-    switch_core_session_write_lock(ctx->session);
-        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-        switch_channel_set_private(channel, "znc_playing", nullptr);
-    switch_core_session_rwunlock(ctx->session);
-}
-
-void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len) {
-    switch_frame_t write_frame = { 0 };
-    write_frame.codec = &ctx->playback_codec;
-    write_frame.rate = ctx->playback_rate;
-    write_frame.channels = ctx->playback_channels;
-    write_frame.samples = len / 2;
-    write_frame.timestamp = ctx->playback_timestamp;
-    write_frame.data = data;
-    write_frame.datalen = len;
-    /*switch_status_t status =*/
-    switch_core_session_write_frame(ctx->session, &write_frame, SWITCH_IO_FLAG_NONE, 0);
-    ctx->playback_timestamp += write_frame.samples;
-}
+void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event);
+void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event);
+void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len);
 
 
 /**
@@ -668,7 +427,7 @@ public:
         m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
-    void playback(const char *filename, int stream_id) {
+    void playback(const char *filename, const int stream_id, const int samples) {
         nlohmann::json json_playback = {
                 {"header", {
                         // 当次消息请求ID，随机生成32位唯一ID。
@@ -678,13 +437,18 @@ public:
                         //{"namespace", "FlowingSpeechSynthesizer"},
                         {"name", "Playback"}
                         //{"appkey", m_appkey}
-                }},
+                }}
+                /*,
                 {"payload", {
                        {"file", filename}
-                }}
+                }} */
         };
+        if (filename) {
+            json_playback["payload"]["file"] = filename;
+        }
         if (stream_id) {
             json_playback["payload"]["id"] = stream_id;
+            json_playback["payload"]["samples"] = samples;
         }
 
         const std::string str_playback = json_playback.dump();
@@ -737,7 +501,7 @@ public:
         }
     }
 
-    void stop_playback(const char *filename) {
+    void stop_playback() {
         nlohmann::json json_stop_playback = {
                 {"header", {
                                    // 当次消息请求ID，随机生成32位唯一ID。
@@ -780,6 +544,320 @@ private:
     bool m_open;
     bool m_done;
 };
+
+/**
+ * 识别启动回调函数
+ *
+ * @param ctx
+ */
+void on_transcription_started(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* TranscriptionStarted 事件
+    {
+        "header": {
+            "message_id": "05450bf69c53413f8d88aed1ee60****",
+            "task_id": "640bc797bb684bd6960185651307****",
+            "namespace": "FlowingSpeechSynthesizer",
+            "name": "TranscriptionStarted",
+            "status": 20000000,
+            "status_message": "GATEWAY|SUCCESS|Success."
+        },
+        "payload": {
+            "session_id": "1231231dfdf****"
+        }
+    } */
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: medhub\n");
+    }
+    switch_mutex_lock(ctx->mutex);
+    ctx->started = 1;
+    ctx->starting = 0;
+    switch_mutex_unlock(ctx->mutex);
+
+    if (ctx->asr_callback) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: call on_asr_started_func %p\n", ctx->asr_callback->on_asr_started_func);
+        }
+        ctx->asr_callback->on_asr_started_func(ctx->asr_callback->asr_caller);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_transcription_started: ctx->asr_callback is null\n");
+    }
+}
+
+/**
+ * @brief 一句话开始回调函数
+ *
+ * @param ctx
+ */
+void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* SentenceBegin 事件
+    {
+        "header": {
+            "name": "SentenceBegin",
+        },
+        "payload": {
+            "index": 1,
+            "time": 320
+        }
+    } */
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_begin: medhub\n");
+    }
+    if (ctx->asr_callback) {
+        ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
+    }
+    if (ctx->current_stream_id) {
+        // is playbacking
+        ctx->client->stop_playback();
+    }
+}
+
+/**
+ * @brief 一句话结束回调函数
+ *
+ * @param ctx
+ * @param text
+ */
+void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* SentenceEnd 事件
+    {
+        "header": {
+            "name": "SentenceEnd",
+        },
+        "payload": {
+            "index": 1,
+            "time": 3260,
+            "begin_time": 1800,
+            "result": "今年双十一我要买电视"
+        }
+    } */
+    if (ctx->current_stream_id) {
+        // is playbacking
+        ctx->client->playback(nullptr, ctx->current_stream_id, ctx->last_playback_samples);
+    }
+
+    std::string result = hub_event["payload"]["result"];
+    asr_sentence_result_t asr_sentence_result = {
+            hub_event["payload"]["index"],
+            hub_event["payload"]["begin_time"],
+            hub_event["payload"]["time"],
+            hub_event["payload"]["confidence"],
+            result.c_str()
+    };
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: medhub\n");
+    }
+    if (ctx->asr_callback) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: call on_asr_sentence_end_func %p\n", ctx->asr_callback->on_asr_sentence_end_func);
+        }
+        ctx->asr_callback->on_asr_sentence_end_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_sentence_end: ctx->asr_callback is null\n");
+    }
+}
+
+/**
+ * @brief 识别结果变化回调函数
+ *
+ * @param ctx
+ * @param text
+ */
+void on_transcription_result_changed(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* TranscriptionResultChanged 事件
+    {
+        "header": {
+            "name": "TranscriptionResultChanged",
+        },
+        "payload": {
+            "index":1,
+            "time":1800,
+            "result":"今年双十一"
+        }
+    } */
+    std::string result = hub_event["payload"]["result"];
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_result_changed: medhub\n");
+    }
+    if (ctx->asr_callback) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_transcription_result_changed: call on_asr_result_changed_func %p\n", ctx->asr_callback->on_asr_result_changed_func);
+        }
+        asr_sentence_result_t asr_sentence_result = {
+                -1,
+                -1,
+                -1,
+                0.0,
+                result.c_str()
+        };
+        ctx->asr_callback->on_asr_result_changed_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_transcription_result_changed: ctx->asr_callback is null\n");
+    }
+}
+
+/**
+ * @brief 语音转写结束回调函数
+ *
+ * @param ctx
+ */
+void on_transcription_completed(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* TranscriptionCompleted 事件
+    {
+        "header": {
+            "name": "TranscriptionCompleted",
+        }
+    } */
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_transcription_completed: medhub\n");
+    }
+    if (ctx->asr_callback) {
+        ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
+    }
+}
+
+/**
+ * @brief 异常识别回调函数
+ *
+ * @param ctx
+ */
+void on_task_failed(medhub_context_t *ctx) {
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_task_failed: medhub\n");
+    }
+    switch_mutex_lock(ctx->mutex);
+    ctx->started = 0;
+    switch_mutex_unlock(ctx->mutex);
+}
+
+/**
+ * @brief 识别通道关闭回调函数
+ *
+ * @param ctx
+ */
+void on_channel_closed(medhub_context_t *ctx) {
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_channel_closed: medhub\n");
+    }
+    /*
+    if (ctx->asr_callback) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "onChannelClosed: call on_asr_stopped_func %p\n", ctx->asr_callback->on_asr_stopped_func);
+        }
+        ctx->asr_callback->on_asr_stopped_func(ctx->asr_callback->asr_caller);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_channel_closed: ctx->asr_callback is null\n");
+    }
+     */
+}
+
+void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* PlaybackStart 事件
+    {
+        "header": {
+            "name": "PlaybackStart",
+        },
+        "payload": {
+            "stream_id": 4,
+            "file": "...",
+            "rate": 8000,
+            "interval": 20,
+            "channels": 1
+        }
+    } */
+    const std::string filename = hub_event["payload"]["file"];
+    const int stream_id = hub_event["payload"]["id"];
+    const uint32_t rate = hub_event["payload"]["rate"];
+    const int32_t interval = hub_event["payload"]["interval"];
+    const int32_t channels = hub_event["payload"]["channels"];
+
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
+    }
+
+    switch_core_session_write_lock(ctx->session);
+
+    if (switch_core_codec_init(&ctx->playback_codec,
+                               "L16",
+                               NULL,
+                               NULL,
+                               rate,
+                               interval,
+                               channels,
+                               SWITCH_CODEC_FLAG_ENCODE | SWITCH_CODEC_FLAG_DECODE,
+                               NULL,
+                               switch_core_session_get_pool(ctx->session)) ==
+        SWITCH_STATUS_SUCCESS) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
+                              "Codec Activated %s@%uhz %u channels %dms\n",
+                              "L16", rate, channels, interval);
+        }
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_WARNING,
+                          "Raw Codec Activation Failed %s@%uhz %u channels %dms\n",
+                          "L16", rate, channels, interval);
+    }
+    ctx->playback_rate = rate;
+    ctx->playback_channels = channels;
+    ctx->playback_timestamp = 0;
+    ctx->current_stream_id = stream_id;
+
+    switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+    switch_channel_set_private(channel, "znc_playing", "1");
+
+    switch_core_session_rwunlock(ctx->session);
+}
+
+void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    /* PlaybackStop 事件
+    {
+        "header": {
+            "name": "PlaybackStop",
+        },
+        "payload": {
+            "file": "...",
+            "samples":38880,
+            "completed":true
+        }
+    } */
+    const std::string filename = hub_event["payload"]["file"];
+    const int stream_id = hub_event["payload"]["id"];
+    const int samples = hub_event["payload"]["samples"];
+    const bool completed = hub_event["payload"]["completed"];
+
+    ctx->last_playback_samples = samples;
+    ctx->last_playback_completed = completed;
+
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                          "recv PlaybackStop event: file: %s/samples: %d/completed: %d, current stream id: %d/stop stream_id: %d\n",
+                          filename.c_str(), samples, completed, ctx->current_stream_id, stream_id);
+    }
+
+    if (completed) {
+        // playback completed, clear stream id
+        ctx->current_stream_id = 0;
+    }
+
+    switch_core_session_write_lock(ctx->session);
+    switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+    switch_channel_set_private(channel, "znc_playing", nullptr);
+    switch_core_session_rwunlock(ctx->session);
+}
+
+void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len) {
+    switch_frame_t write_frame = { 0 };
+    write_frame.codec = &ctx->playback_codec;
+    write_frame.rate = ctx->playback_rate;
+    write_frame.channels = ctx->playback_channels;
+    write_frame.samples = len / 2;
+    write_frame.timestamp = ctx->playback_timestamp;
+    write_frame.data = data;
+    write_frame.datalen = len;
+    /*switch_status_t status =*/
+    switch_core_session_write_frame(ctx->session, &write_frame, SWITCH_IO_FLAG_NONE, 0);
+    ctx->playback_timestamp += write_frame.samples;
+}
 
 // typedef WebsocketClient<websocketpp::config::asio_tls_client> medhub_client;
 
@@ -1369,7 +1447,8 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                               argv[0]);
         }
         else {
-            ctx->client->playback(_file, 1);
+            ctx->current_stream_id = 0;   // clear current stream id
+            ctx->client->playback(_file, 0, 0);
         }
 
         // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
