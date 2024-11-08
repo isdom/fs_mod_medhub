@@ -774,7 +774,7 @@ void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "recv PlaybackStart event: %s\n", filename.c_str());
     }
 
-    switch_core_session_write_lock(ctx->session);
+    // switch_core_session_write_lock(ctx->session);
 
     if (switch_core_codec_init(&ctx->playback_codec,
                                "L16",
@@ -805,7 +805,7 @@ void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
     switch_channel_set_private(channel, "znc_playing", "1");
 
-    switch_core_session_rwunlock(ctx->session);
+    // switch_core_session_rwunlock(ctx->session);
 }
 
 void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
@@ -839,10 +839,10 @@ void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         ctx->current_stream_id = 0;
     }
 
-    switch_core_session_write_lock(ctx->session);
+    // switch_core_session_write_lock(ctx->session);
     switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
     switch_channel_set_private(channel, "znc_playing", nullptr);
-    switch_core_session_rwunlock(ctx->session);
+    // switch_core_session_rwunlock(ctx->session);
 }
 
 void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len) {
