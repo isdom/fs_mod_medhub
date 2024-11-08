@@ -808,6 +808,33 @@ void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     // switch_core_session_rwunlock(ctx->session);
 }
 
+static void fire_report_ai_speak(const char *uuid,
+                                 const char *content_id,
+                                 const char *ccs_call_id,
+                                 const char *record_start_timestamp,
+                                 const char *playback_start_timestamp,
+                                 const char *playback_stop_timestamp,
+                                 const char *playback_ms) {
+    switch_event_t *event = nullptr;
+    if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
+        switch_event_set_subclass_name(event, "znc_report_ai_speak");
+
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Unique-ID", uuid);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "ccs_call_id", ccs_call_id);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "content_id", content_id);
+        if (record_start_timestamp) {
+            switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Record-Start-Timestamp", record_start_timestamp);
+        }
+        if (playback_start_timestamp) {
+            switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Start-Timestamp", playback_start_timestamp);
+        }
+
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Stop-Timestamp", playback_stop_timestamp);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Play-Time-Ms", playback_ms);
+        switch_event_fire(&event);
+    }
+}
+
 void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStop 事件
     {
