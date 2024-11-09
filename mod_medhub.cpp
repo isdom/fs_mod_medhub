@@ -1407,6 +1407,99 @@ end:
     return status;
 }
 
+// hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
+SWITCH_STANDARD_API(hub_uuid_play_function) {
+    if (zstr(cmd)) {
+        stream->write_function(stream, "hub_uuid_play: parameter missing.\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play: parameter missing.\n");
+        return SWITCH_STATUS_SUCCESS;
+    }
+
+    switch_status_t status = SWITCH_STATUS_SUCCESS;
+    switch_core_session_t *session4play = nullptr;
+    char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr;
+
+    switch_memory_pool_t *pool;
+    switch_core_new_memory_pool(&pool);
+    char *my_cmd = switch_core_strdup(pool, cmd);
+
+    char *argv[MAX_API_ARGC];
+    memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
+
+    int argc = switch_split(my_cmd, ' ', argv);
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_play: cmd[%s], argc[%d]\n", my_cmd, argc);
+    }
+
+    if (argc < 1) {
+        stream->write_function(stream, "uuid is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    for (int idx = 1; idx < MAX_API_ARGC; idx++) {
+        if (argv[idx]) {
+            char *ss[2] = {nullptr, nullptr};
+            int cnt = switch_split(argv[idx], '=', ss);
+            if (cnt == 2) {
+                char *var = ss[0];
+                char *val = ss[1];
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_play: process arg[%s = %s]\n", var, val);
+                }
+                if (!strcasecmp(var, "file")) {
+                    _file = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "cancel_on_speak")) {
+                    _cancel_on_speak = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "pause_on_speak")) {
+                    _pause_on_speak = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "content_id")) {
+                    _content_id = val;
+                    continue;
+                }
+            }
+        }
+    }
+
+    if (!_file) {
+        stream->write_function(stream, "file is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    session4play = switch_core_session_force_locate(argv[0]);
+    if (!session4play) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found session by %s\n",
+                          argv[0]);
+    } else {
+        switch_channel_t *channel = switch_core_session_get_channel(session4play);
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_play:%s\n", switch_channel_get_name(channel));
+        }
+
+        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+        if (!ctx) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found medhub ctx by %s\n",
+                              argv[0]);
+        }
+        else {
+            switch_ivr_broadcast(switch_channel_get_uuid(channel), _file, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+        }
+
+        // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+        //  We meet : ... Locked, Waiting on external entities
+        switch_core_session_rwunlock(session4play);
+    }
+
+    end:
+    switch_core_destroy_memory_pool(&pool);
+    return status;
+}
+
 #if ENABLE_MEDHUB_PLAYBACK
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
@@ -1698,13 +1791,13 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
                    uuid_connect_medhub_function,
                    "<cmd><args>");
 
-#if ENABLE_MEDHUB_PLAYBACK
     SWITCH_ADD_API(api_interface,
                    "hub_uuid_play",
                    "hub_uuid_play api",
                    hub_uuid_play_function,
                    "<cmd><args>");
 
+#if ENABLE_MEDHUB_PLAYBACK
     SWITCH_ADD_API(api_interface,
                    "hub_uuid_tts",
                    "hub_uuid_tts api",
