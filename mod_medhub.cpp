@@ -821,33 +821,6 @@ void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     // switch_core_session_rwunlock(ctx->session);
 }
 
-static void fire_report_ai_speak(const char *uuid,
-                                 const char *content_id,
-                                 const char *ccs_call_id,
-                                 const char *record_start_timestamp,
-                                 const char *playback_start_timestamp,
-                                 const char *playback_stop_timestamp,
-                                 const char *playback_ms) {
-    switch_event_t *event = nullptr;
-    if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
-        switch_event_set_subclass_name(event, "znc_report_ai_speak");
-
-        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Unique-ID", uuid);
-        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "ccs_call_id", ccs_call_id);
-        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "content_id", content_id);
-        if (record_start_timestamp) {
-            switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Record-Start-Timestamp", record_start_timestamp);
-        }
-        if (playback_start_timestamp) {
-            switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Start-Timestamp", playback_start_timestamp);
-        }
-
-        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Stop-Timestamp", playback_stop_timestamp);
-        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Play-Time-Ms", playback_ms);
-        switch_event_fire(&event);
-    }
-}
-
 void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStop 事件
     {
@@ -1405,6 +1378,99 @@ SWITCH_STANDARD_API(uuid_connect_medhub_function) {
 end:
     switch_core_destroy_memory_pool(&pool);
     return status;
+}
+
+static void fire_report_ai_speak(const char *uuid,
+                                 const char *content_id,
+                                 const char *ccs_call_id,
+                                 const char *record_start_timestamp,
+                                 const char *playback_start_timestamp,
+                                 const char *playback_stop_timestamp,
+                                 const char *playback_ms) {
+    switch_event_t *event = nullptr;
+    if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
+        switch_event_set_subclass_name(event, "znc_report_ai_speak");
+
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Unique-ID", uuid);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "ccs_call_id", ccs_call_id);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "content_id", content_id);
+        if (record_start_timestamp) {
+            switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Record-Start-Timestamp", record_start_timestamp);
+        }
+        if (playback_start_timestamp) {
+            switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Start-Timestamp", playback_start_timestamp);
+        }
+
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Stop-Timestamp", playback_stop_timestamp);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Play-Time-Ms", playback_ms);
+        switch_event_fire(&event);
+    }
+}
+
+static void stop_current_playing_for(switch_core_session_t *session) {
+    // ref: https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr_play_say.c#L1675
+    // switch_channel_set_flag_value(switch_core_session_get_channel(session), CF_BREAK, 2);
+    switch_file_handle_t *fhp = nullptr;
+    if (switch_ivr_get_file_handle(session, &fhp) == SWITCH_STATUS_SUCCESS) {
+        switch_set_flag_locked(fhp, SWITCH_FILE_DONE);
+        switch_ivr_release_file_handle(session, &fhp);
+    }
+}
+
+static void pause_current_playing_for(switch_core_session_t *session) {
+    // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
+    switch_file_handle_t *fhp = nullptr;
+    if (switch_ivr_get_file_handle(session, &fhp) == SWITCH_STATUS_SUCCESS) {
+        if (!switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
+            switch_set_flag_locked(fhp, SWITCH_FILE_PAUSE);
+            switch_core_file_command(fhp, SCFC_PAUSE_READ);
+        }
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        const char *str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
+        const char *str_record_start_timestamp = switch_channel_get_variable(channel, "record_start_timestamp");
+        const char *str_playback_start_timestamp = switch_channel_get_variable(channel, "playback_start_timestamp");
+        const char *str_current_ai_content_id = switch_channel_get_variable(channel, "current_ai_content_id");
+        const char *str_playback_ms = nullptr;
+
+        if (fhp->native_rate >= 1000) {
+            uint32_t last_playback_ms = 0;
+            const char *str_last_playback_ms = switch_channel_get_variable(channel, "last_playback_ms");
+            if (!str_last_playback_ms) {
+                last_playback_ms = fhp->samples_in / (fhp->native_rate / 1000);
+                switch_channel_set_variable_printf(channel, "last_playback_ms", "%d", last_playback_ms);
+                str_playback_ms = switch_channel_get_variable(channel, "last_playback_ms");
+            }
+            else {
+                last_playback_ms = fhp->samples_in / (fhp->native_rate / 1000);
+                str_playback_ms = switch_core_session_sprintf(session, "%d", last_playback_ms - switch_safe_atol(str_last_playback_ms, 0));
+                switch_channel_set_variable_printf(channel, "last_playback_ms", "%d", last_playback_ms);
+            }
+        }
+        switch_ivr_release_file_handle(session, &fhp);
+        fire_report_ai_speak(switch_core_session_get_uuid(session),
+                             str_current_ai_content_id,
+                             str_ccs_call_id,
+                             str_record_start_timestamp,
+                             str_playback_start_timestamp,
+                             switch_core_session_sprintf(session, "%ld", switch_micro_time_now()),
+                             str_playback_ms);
+
+    }
+}
+
+static void resume_current_playing_for(switch_core_session_t *session) {
+    // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
+    switch_file_handle_t *fhp = nullptr;
+    if (switch_ivr_get_file_handle(session, &fhp) == SWITCH_STATUS_SUCCESS) {
+        if (switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
+            switch_clear_flag_locked(fhp, SWITCH_FILE_PAUSE);
+            switch_core_file_command(fhp, SCFC_PAUSE_READ);
+        }
+        switch_ivr_release_file_handle(session, &fhp);
+
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%ld", switch_micro_time_now());
+    }
 }
 
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
