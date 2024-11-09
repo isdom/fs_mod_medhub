@@ -5,6 +5,7 @@
 #define ASIO_STANDALONE 1
 
 #define ENABLE_WSS 0
+#define ENABLE_MEDHUB_PLAYBACK 0
 
 #include <websocketpp/client.hpp>
 #include <websocketpp/common/thread.hpp>
@@ -84,7 +85,7 @@ typedef struct {
     switch_audio_resampler_t *re_sampler;
     char                    *medhub_url;
     asr_callback_t          *asr_callback;
-
+#if ENABLE_MEDHUB_PLAYBACK
     // playback fields
     switch_codec_t          playback_codec;
     uint32_t                playback_rate;
@@ -93,6 +94,7 @@ typedef struct {
     int                     current_stream_id;
     int                     last_playback_samples;
     bool                    last_playback_completed;
+#endif
 } medhub_context_t;
 
 /**
@@ -146,10 +148,11 @@ void on_task_failed(medhub_context_t *ctx);
  */
 void on_channel_closed(medhub_context_t *ctx);
 
+#if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event);
 void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event);
 void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len);
-
+#endif
 
 /**
  * Define a semi-cross platform helper method that waits/sleeps for a bit.
@@ -262,16 +265,21 @@ public:
                     on_transcription_result_changed(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "SentenceEnd") {
                     on_sentence_end(m_asr_ctx, hubevent);
-                } else if (hubevent["header"]["name"] == "PlaybackStart") {
+                }
+#if ENABLE_MEDHUB_PLAYBACK
+                else if (hubevent["header"]["name"] == "PlaybackStart") {
                     on_playback_start(m_asr_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStop") {
                     on_playback_stop(m_asr_ctx, hubevent);
                 }
+#endif
             }
                 break;
+#if ENABLE_MEDHUB_PLAYBACK
             case websocketpp::frame::opcode::binary:
                 on_playback_data(m_asr_ctx, (uint8_t *) payload.data(), (int32_t) payload.size());
                 break;
+#endif
             default:
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "un-handle opcode: %d\n", msg->get_opcode());
                 break;
@@ -427,6 +435,7 @@ public:
         m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
+#if ENABLE_MEDHUB_PLAYBACK
     void playback(const char *filename, const int stream_id, const int samples) {
         nlohmann::json json_playback = {
                 {"header", {
@@ -532,6 +541,7 @@ public:
             }
         }
     }
+#endif
 
     websocketpp::client<T> m_client;
     websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
@@ -605,10 +615,12 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
     }
+#if ENABLE_MEDHUB_PLAYBACK
     if (ctx->current_stream_id) {
         // is playbacking
         ctx->client->stop_playback();
     }
+#endif
 }
 
 /**
@@ -630,11 +642,12 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             "result": "今年双十一我要买电视"
         }
     } */
+#if ENABLE_MEDHUB_PLAYBACK
     if (ctx->current_stream_id) {
         // is playbacking
         ctx->client->playback(nullptr, ctx->current_stream_id, ctx->last_playback_samples);
     }
-
+#endif
     std::string result = hub_event["payload"]["result"];
     asr_sentence_result_t asr_sentence_result = {
             hub_event["payload"]["index"],
@@ -749,7 +762,7 @@ void on_channel_closed(medhub_context_t *ctx) {
     }
      */
 }
-
+#if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStart 事件
     {
@@ -884,6 +897,7 @@ void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len) {
     switch_core_session_write_frame(ctx->session, &write_frame, SWITCH_IO_FLAG_NONE, 0);
     ctx->playback_timestamp += write_frame.samples;
 }
+#endif
 
 // typedef WebsocketClient<websocketpp::config::asio_tls_client> medhub_client;
 
@@ -1393,6 +1407,7 @@ end:
     return status;
 }
 
+#if ENABLE_MEDHUB_PLAYBACK
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
     if (zstr(cmd)) {
@@ -1659,6 +1674,7 @@ SWITCH_STANDARD_API(hub_uuid_tts_function) {
     switch_core_destroy_memory_pool(&pool);
     return status;
 }
+#endif
 
 /**
  *  定义load函数，加载时运行
@@ -1682,6 +1698,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
                    uuid_connect_medhub_function,
                    "<cmd><args>");
 
+#if ENABLE_MEDHUB_PLAYBACK
     SWITCH_ADD_API(api_interface,
                    "hub_uuid_play",
                    "hub_uuid_play api",
@@ -1693,6 +1710,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
                    "hub_uuid_tts api",
                    hub_uuid_tts_function,
                    "<cmd><args>");
+#endif
 
     SWITCH_ADD_API(api_interface,
                    "medhub_concurrent_cnt",
