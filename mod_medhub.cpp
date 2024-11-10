@@ -1483,6 +1483,7 @@ static void on_record_start(switch_event_t *event) {
 }
 
 static void on_playback_start(switch_event_t *event) {
+    dump_event(event);
     switch_event_header_t *hdr;
     const char *uuid, *playback_start_timestamp = nullptr;
 
@@ -1508,6 +1509,7 @@ static void on_playback_start(switch_event_t *event) {
 }
 
 static void on_playback_stop(switch_event_t *event) {
+    dump_event(event);
     switch_event_header_t *hdr;
     const char *uuid, *file, *offset, *status,
             *content_id = nullptr,
@@ -1706,7 +1708,7 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
     }
 }
 
-// hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
+// hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number> vars_playback_id=<playback_id>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
     if (zstr(cmd)) {
         stream->write_function(stream, "hub_uuid_play: parameter missing.\n");
@@ -1716,7 +1718,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
 
     switch_status_t status = SWITCH_STATUS_SUCCESS;
     switch_core_session_t *session4play = nullptr;
-    char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr;
+    char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr, *_vars_playback_id = nullptr;
 
     switch_memory_pool_t *pool;
     switch_core_new_memory_pool(&pool);
@@ -1759,6 +1761,10 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                 }
                 if (!strcasecmp(var, "content_id")) {
                     _content_id = val;
+                    continue;
+                }
+                if (!strcasecmp(var, "vars_playback_id")) {
+                    _vars_playback_id = val;
                     continue;
                 }
             }
@@ -1810,7 +1816,9 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             //  We meet : ... Locked, Waiting on external entities
             switch_core_session_rwunlock(session4play);
 
-            switch_ivr_broadcast(argv[0], _file, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+            const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s}%s", _content_id, _vars_playback_id, _file);
+            switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+
         }
     }
 
