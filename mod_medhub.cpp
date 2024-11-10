@@ -95,6 +95,10 @@ typedef struct {
     int                     last_playback_samples;
     bool                    last_playback_completed;
 #endif
+    const char *content_id;
+    const char *playback_file;
+    bool cancel_on_speak;
+    bool pause_on_speak;
 } medhub_context_t;
 
 /**
@@ -147,6 +151,10 @@ void on_task_failed(medhub_context_t *ctx);
  * @param ctx
  */
 void on_channel_closed(medhub_context_t *ctx);
+
+static void stop_current_playing_for(switch_core_session_t *session);
+static void pause_current_playing_for(switch_core_session_t *session);
+static void resume_current_playing_for(switch_core_session_t *session);
 
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event);
@@ -615,12 +623,26 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
     }
-#if ENABLE_MEDHUB_PLAYBACK
-    if (ctx->current_stream_id) {
-        // is playbacking
-        ctx->client->stop_playback();
+    switch_mutex_lock(ctx->mutex);
+    if (ctx->content_id) {
+        if (ctx->cancel_on_speak) {
+            stop_current_playing_for(ctx->session);
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                                  "on_sentence_begin: stop playing for cancel_on_speak, session [%s]\n",
+                                  switch_core_session_get_uuid(ctx->session));
+            }
+        }
+        else if (ctx->pause_on_speak) {
+            pause_current_playing_for(ctx->session);
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                                  "on_sentence_begin: pause playing for pause_on_speak, session [%s]\n",
+                                  switch_core_session_get_uuid(ctx->session));
+            }
+        }
     }
-#endif
+    switch_mutex_unlock(ctx->mutex);
 }
 
 /**
@@ -642,12 +664,19 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             "result": "今年双十一我要买电视"
         }
     } */
-#if ENABLE_MEDHUB_PLAYBACK
-    if (ctx->current_stream_id) {
-        // is playbacking
-        ctx->client->playback(nullptr, ctx->current_stream_id, ctx->last_playback_samples);
+    switch_mutex_lock(ctx->mutex);
+    if (ctx->content_id) {
+        if (ctx->pause_on_speak) {
+            resume_current_playing_for(ctx->session);
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                                  "on_sentence_end: resume playing for pause_on_speak, session [%s]\n",
+                                  switch_core_session_get_uuid(ctx->session));
+            }
+        }
     }
-#endif
+    switch_mutex_unlock(ctx->mutex);
+
     std::string result = hub_event["payload"]["result"];
     asr_sentence_result_t asr_sentence_result = {
             hub_event["payload"]["index"],
@@ -974,13 +1003,15 @@ switch_state_handler_table_t medhub_cs_handlers = {
 // params: <uuid> proxyurl=<uri>
 #define MAX_API_ARGC 20
 
+#define MEDHUB_CTX_NAME "_medhub_ctx"
+
 static void *init_medhub(switch_core_session_t *session, const switch_codec_implementation_t *read_impl, const char *cmd) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "init_medhub:%s\n", switch_channel_get_name(channel));
     }
 
-    auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
     if (!ctx) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "init_medhub failed, can't found medhub ctx by %s\n",
                           switch_channel_get_name(channel));
@@ -1115,13 +1146,13 @@ static void stop_medhub(medhub_context_t *ctx) {
 static void destroy_medhub(medhub_context_t *ctx) {
     switch_core_session_t *session = ctx->session;
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
     if (!medhub_ctx) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "destroy_medhub: [%s]'s medhub_context is nullptr, destroy_medhub called before",
                           switch_core_session_get_uuid(session));
         return;
     }
-    switch_channel_set_private(channel, "_medhub_ctx", nullptr); // clear channel's private data for medhub_context
+    switch_channel_set_private(channel, MEDHUB_CTX_NAME, nullptr); // clear channel's private data for medhub_context
 
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE,
@@ -1186,7 +1217,7 @@ static switch_status_t medhub_cleanup_on_channel_destroy(switch_core_session_t *
     }
     switch_core_session_write_lock(session);
     switch_channel_t *channel = switch_core_session_get_channel(session);
-    auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+    auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
     if (!medhub_ctx) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "medhub_cleanup_on_channel_destroy: [%s]'s medhub_context is nullptr",
                           switch_core_session_get_uuid(session));
@@ -1262,7 +1293,7 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
     ctx->medhub_url = switch_core_session_strdup(session, url);
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
-    switch_channel_set_private(switch_core_session_get_channel(session), "_medhub_ctx", ctx);
+    switch_channel_set_private(switch_core_session_get_channel(session), MEDHUB_CTX_NAME, ctx);
 
     // increment medhub concurrent count
     switch_atomic_inc(&medhub_globals->medhub_concurrent_cnt);
@@ -1407,20 +1438,184 @@ static void fire_report_ai_speak(const char *uuid,
     }
 }
 
+static void on_record_start(switch_event_t *event) {
+    switch_event_header_t *hdr;
+    const char *uuid;
+
+    hdr = switch_event_get_header_ptr(event, "Unique-ID");
+    uuid = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_record_start: uuid: %s", uuid);
+    }
+
+    switch_core_session *session  = switch_core_session_force_locate(uuid);
+    if (session) {
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
+        const char *record_start_timestamp = hdr->value;
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_record_start: record_start_timestamp: %s", record_start_timestamp);
+        }
+        switch_channel_set_variable_printf(channel, "record_start_timestamp", "%s", record_start_timestamp);
+        switch_core_session_rwunlock(session);
+    }
+}
+
+static void on_playback_start(switch_event_t *event) {
+    switch_event_header_t *hdr;
+    const char *uuid, *playback_start_timestamp = nullptr;
+
+    hdr = switch_event_get_header_ptr(event, "Unique-ID");
+    uuid = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: uuid: %s", uuid);
+    }
+
+    switch_core_session *session  = switch_core_session_force_locate(uuid);
+    if (session) {
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
+        playback_start_timestamp = hdr->value;
+
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: %s playback_start_timestamp: %s",
+                              uuid, playback_start_timestamp);
+        }
+        switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%s", playback_start_timestamp);
+        switch_core_session_rwunlock(session);
+    }
+}
+
+static void on_playback_stop(switch_event_t *event) {
+    switch_event_header_t *hdr;
+    const char *uuid, *file, *offset, *status,
+            *content_id = nullptr,
+            *ccs_call_id = nullptr,
+            *record_start_timestamp = nullptr,
+            *playback_start_timestamp = nullptr,
+            *playback_stop_timestamp = nullptr,
+            *playback_ms = nullptr,
+            *last_playback_ms = nullptr;
+
+    hdr = switch_event_get_header_ptr(event, "Unique-ID");
+    uuid = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: uuid: %s", hdr->value);
+    }
+
+    switch_core_session *session  = switch_core_session_force_locate(uuid);
+    if (session) {
+        switch_channel_t *channel = switch_core_session_get_channel(session);
+        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
+        if (!ctx) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_playback_stop: can't found medhub ctx by %s\n", uuid);
+        }
+        else {
+            switch_mutex_lock(ctx->mutex);
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: %s clear content_id: %s",
+                                  uuid, ctx->content_id);
+            }
+            ctx->content_id = nullptr;
+            ctx->playback_file = nullptr;
+            switch_mutex_unlock(ctx->mutex);
+        }
+        switch_core_session_rwunlock(session);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "Playback-Status");
+    status = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: status: %s", hdr->value);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
+    file = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: path: %s", hdr->value);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "variable_playback_last_offset_pos");
+    offset = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: pos: %s", hdr->value);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
+    playback_stop_timestamp = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: playback_stop_timestamp: %s",
+                          playback_stop_timestamp);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "variable_playback_ms");
+    if (hdr) {
+        playback_ms = hdr->value;
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: playback_ms: %s", playback_ms);
+        }
+    }
+
+    hdr = switch_event_get_header_ptr(event, "variable_current_ai_content_id");
+    if (hdr) {
+        content_id = hdr->value;
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: content_id: %s", content_id);
+        }
+    }
+
+    if (content_id) {
+        hdr = switch_event_get_header_ptr(event, "variable_ccs_call_id");
+        if (hdr) {
+            ccs_call_id = hdr->value;
+        }
+        hdr = switch_event_get_header_ptr(event, "variable_record_start_timestamp");
+        if (hdr) {
+            record_start_timestamp = hdr->value;
+        }
+        hdr = switch_event_get_header_ptr(event, "variable_playback_start_timestamp");
+        if (hdr) {
+            playback_start_timestamp = hdr->value;;
+        }
+        hdr = switch_event_get_header_ptr(event, "variable_last_playback_ms");
+        if (hdr) {
+            last_playback_ms = hdr->value;
+        }
+        if (last_playback_ms) {
+            char str[32];
+            long real_playback_ms = switch_safe_atol(playback_ms, 0) - switch_safe_atol(last_playback_ms, 0);
+            sprintf(str, "%ld", real_playback_ms);
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: last_playback_ms exist, real playback_ms: %ld", real_playback_ms);
+            }
+            fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, str);
+        }
+        else {
+            fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, playback_ms);
+        }
+    }
+}
+
 static void stop_current_playing_for(switch_core_session_t *session) {
     // ref: https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr_play_say.c#L1675
     // switch_channel_set_flag_value(switch_core_session_get_channel(session), CF_BREAK, 2);
     switch_file_handle_t *fhp = nullptr;
-    if (switch_ivr_get_file_handle(session, &fhp) == SWITCH_STATUS_SUCCESS) {
+    const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
+    if (SWITCH_STATUS_SUCCESS == status) {
         switch_set_flag_locked(fhp, SWITCH_FILE_DONE);
         switch_ivr_release_file_handle(session, &fhp);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "stop_current_playing_for: session [%s] failed for switch_ivr_get_file_handle return %d\n",
+                          switch_core_session_get_uuid(session), status);
     }
 }
 
 static void pause_current_playing_for(switch_core_session_t *session) {
     // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
     switch_file_handle_t *fhp = nullptr;
-    if (switch_ivr_get_file_handle(session, &fhp) == SWITCH_STATUS_SUCCESS) {
+    const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
+    if (SWITCH_STATUS_SUCCESS == status) {
         if (!switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
             switch_set_flag_locked(fhp, SWITCH_FILE_PAUSE);
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
@@ -1455,21 +1650,29 @@ static void pause_current_playing_for(switch_core_session_t *session) {
                              switch_core_session_sprintf(session, "%ld", switch_micro_time_now()),
                              str_playback_ms);
 
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "pause_current_playing_for: session [%s] failed for switch_ivr_get_file_handle return %d\n",
+                          switch_core_session_get_uuid(session), status);
     }
 }
 
 static void resume_current_playing_for(switch_core_session_t *session) {
     // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
     switch_file_handle_t *fhp = nullptr;
-    if (switch_ivr_get_file_handle(session, &fhp) == SWITCH_STATUS_SUCCESS) {
+    const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
+    if (SWITCH_STATUS_SUCCESS == status) {
         if (switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
             switch_clear_flag_locked(fhp, SWITCH_FILE_PAUSE);
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
         }
         switch_ivr_release_file_handle(session, &fhp);
-
         switch_channel_t *channel = switch_core_session_get_channel(session);
         switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%ld", switch_micro_time_now());
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "resume_current_playing_for: session [%s] failed for switch_ivr_get_file_handle return %d\n",
+                          switch_core_session_get_uuid(session), status);
     }
 }
 
@@ -1544,15 +1747,26 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
     } else {
         switch_channel_t *channel = switch_core_session_get_channel(session4play);
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_play:%s\n", switch_channel_get_name(channel));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_play:%s\n", switch_core_session_get_uuid(session4play));
         }
 
-        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, "_medhub_ctx");
+        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
         if (!ctx) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found medhub ctx by %s\n",
-                              argv[0]);
+                              switch_core_session_get_uuid(session4play));
         }
         else {
+            ctx->content_id = _content_id ? switch_core_session_strdup(session4play, _content_id) : nullptr;
+            ctx->playback_file = switch_core_session_strdup(session4play, _file);
+            ctx->cancel_on_speak = _cancel_on_speak && atoi(_cancel_on_speak);
+            ctx->pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
+
+            if (_content_id) {
+                switch_channel_set_variable_printf(channel, "current_ai_content_id", "%s", _content_id);
+            }
+            // clear last_playback_ms variable
+            switch_channel_set_variable(channel, "last_playback_ms", nullptr);
+
             switch_ivr_broadcast(switch_channel_get_uuid(channel), _file, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
         }
 
@@ -1882,6 +2096,24 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
                    "Set medhub debug",
                    mod_medhub_debug,
                    ASRHUB_DEBUG_SYNTAX);
+
+    // TODO: switch_event_unbind_callback
+    if (switch_event_bind(modname, SWITCH_EVENT_RECORD_START, SWITCH_EVENT_SUBCLASS_ANY,
+                          on_record_start, nullptr) != SWITCH_STATUS_SUCCESS) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Bind SWITCH_EVENT_RECORD_START event failed!\n");
+    }
+    
+    // TODO: switch_event_unbind_callback
+    if (switch_event_bind(modname, SWITCH_EVENT_PLAYBACK_START, SWITCH_EVENT_SUBCLASS_ANY,
+                          on_playback_start, nullptr) != SWITCH_STATUS_SUCCESS) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Bind SWITCH_EVENT_PLAYBACK_START event failed!\n");
+    }
+
+    // TODO: switch_event_unbind_callback
+    if (switch_event_bind(modname, SWITCH_EVENT_PLAYBACK_STOP, SWITCH_EVENT_SUBCLASS_ANY,
+                          on_playback_stop, nullptr) != SWITCH_STATUS_SUCCESS) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Bind SWITCH_EVENT_PLAYBACK_STOP event failed!\n");
+    }
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_medhub loaded\n");
 
