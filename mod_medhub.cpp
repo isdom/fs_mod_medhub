@@ -152,9 +152,9 @@ void on_task_failed(medhub_context_t *ctx);
  */
 void on_channel_closed(medhub_context_t *ctx);
 
-static void stop_current_playing_for(switch_core_session_t *session);
-static void pause_current_playing_for(switch_core_session_t *session);
-static void resume_current_playing_for(switch_core_session_t *session);
+static bool stop_current_playing_for(switch_core_session_t *session);
+static bool pause_current_playing_for(switch_core_session_t *session);
+static bool resume_current_playing_for(switch_core_session_t *session);
 
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event);
@@ -1596,7 +1596,11 @@ static void on_playback_stop(switch_event_t *event) {
     }
 }
 
-static void stop_current_playing_for(switch_core_session_t *session) {
+static bool is_playing(medhub_context_t *ctx) {
+    return ctx->content_id != nullptr;
+}
+
+static bool stop_current_playing_for(switch_core_session_t *session) {
     // ref: https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr_play_say.c#L1675
     // switch_channel_set_flag_value(switch_core_session_get_channel(session), CF_BREAK, 2);
     switch_file_handle_t *fhp = nullptr;
@@ -1604,14 +1608,16 @@ static void stop_current_playing_for(switch_core_session_t *session) {
     if (SWITCH_STATUS_SUCCESS == status) {
         switch_set_flag_locked(fhp, SWITCH_FILE_DONE);
         switch_ivr_release_file_handle(session, &fhp);
+        return true;
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
                           "stop_current_playing_for: session [%s] failed for switch_ivr_get_file_handle return %d\n",
                           switch_core_session_get_uuid(session), status);
+        return false;
     }
 }
 
-static void pause_current_playing_for(switch_core_session_t *session) {
+static bool pause_current_playing_for(switch_core_session_t *session) {
     // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
@@ -1649,15 +1655,16 @@ static void pause_current_playing_for(switch_core_session_t *session) {
                              str_playback_start_timestamp,
                              switch_core_session_sprintf(session, "%ld", switch_micro_time_now()),
                              str_playback_ms);
-
+        return true;
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
                           "pause_current_playing_for: session [%s] failed for switch_ivr_get_file_handle return %d\n",
                           switch_core_session_get_uuid(session), status);
+        return false;
     }
 }
 
-static void resume_current_playing_for(switch_core_session_t *session) {
+static bool resume_current_playing_for(switch_core_session_t *session) {
     // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
@@ -1669,10 +1676,12 @@ static void resume_current_playing_for(switch_core_session_t *session) {
         switch_ivr_release_file_handle(session, &fhp);
         switch_channel_t *channel = switch_core_session_get_channel(session);
         switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%ld", switch_micro_time_now());
+        return true;
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
                           "resume_current_playing_for: session [%s] failed for switch_ivr_get_file_handle return %d\n",
                           switch_core_session_get_uuid(session), status);
+        return false;
     }
 }
 
@@ -1754,12 +1763,21 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
         if (!ctx) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_play failed, can't found medhub ctx by %s\n",
                               switch_core_session_get_uuid(session4play));
+            // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+            //  We meet : ... Locked, Waiting on external entities
+            switch_core_session_rwunlock(session4play);
         }
         else {
+            switch_mutex_lock(ctx->mutex);
+            if (is_playing(ctx)) {
+                stop_current_playing_for(ctx->session);
+            }
             ctx->content_id = _content_id ? switch_core_session_strdup(session4play, _content_id) : nullptr;
             ctx->playback_file = switch_core_session_strdup(session4play, _file);
             ctx->cancel_on_speak = _cancel_on_speak && atoi(_cancel_on_speak);
             ctx->pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
+
+            switch_mutex_unlock(ctx->mutex);
 
             if (_content_id) {
                 switch_channel_set_variable_printf(channel, "current_ai_content_id", "%s", _content_id);
@@ -1767,12 +1785,12 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             // clear last_playback_ms variable
             switch_channel_set_variable(channel, "last_playback_ms", nullptr);
 
-            switch_ivr_broadcast(switch_channel_get_uuid(channel), _file, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
-        }
+            // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+            //  We meet : ... Locked, Waiting on external entities
+            switch_core_session_rwunlock(session4play);
 
-        // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
-        //  We meet : ... Locked, Waiting on external entities
-        switch_core_session_rwunlock(session4play);
+            switch_ivr_broadcast(argv[0], _file, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+        }
     }
 
     end:
