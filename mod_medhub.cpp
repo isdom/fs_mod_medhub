@@ -1504,30 +1504,14 @@ static void on_playback_start(switch_event_t *event) {
     if (event_timestamp && start_timestamp) {
         long diff = (switch_safe_atol(event_timestamp, 0) - switch_safe_atol(start_timestamp, 0)) / 1000L;
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: session[%s] diff from launch to start: %ld ms, sizeof(time):%ld, sizeof(long):%ld",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_playback_start: session[%s] diff from launch to start: %ld ms, sizeof(time):%ld, sizeof(long):%ld",
                               uuid, diff, sizeof(switch_time_t), sizeof(long));
         }
     }
-
-    /*
-    switch_core_session *session  = switch_core_session_force_locate(uuid);
-    if (session) {
-        switch_channel_t *channel = switch_core_session_get_channel(session);
-        hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
-        playback_start_timestamp = hdr->value;
-
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: %s playback_start_timestamp: %s",
-                              uuid, playback_start_timestamp);
-        }
-        switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%s", playback_start_timestamp);
-        switch_core_session_rwunlock(session);
-    }
-     */
 }
 
 static void on_playback_stop(switch_event_t *event) {
-    dump_event(event);
+    // dump_event(event);
     switch_event_header_t *hdr;
     const char *uuid, *file, *offset, *status,
             *content_id = nullptr,
@@ -1535,8 +1519,7 @@ static void on_playback_stop(switch_event_t *event) {
             *record_start_timestamp = nullptr,
             *playback_start_timestamp = nullptr,
             *playback_stop_timestamp = nullptr,
-            *playback_ms = nullptr,
-            *last_playback_ms = nullptr;
+            *playback_ms = nullptr;
 
     hdr = switch_event_get_header_ptr(event, "Unique-ID");
     uuid = hdr->value;
@@ -1621,24 +1604,7 @@ static void on_playback_stop(switch_event_t *event) {
         if (hdr) {
             playback_start_timestamp = hdr->value;;
         }
-        /*
-        hdr = switch_event_get_header_ptr(event, "variable_last_playback_ms");
-        if (hdr) {
-            last_playback_ms = hdr->value;
-        }
-        if (last_playback_ms) {
-            char str[32];
-            long real_playback_ms = switch_safe_atol(playback_ms, 0) - switch_safe_atol(last_playback_ms, 0);
-            sprintf(str, "%ld", real_playback_ms);
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: last_playback_ms exist, real playback_ms: %ld", real_playback_ms);
-            }
-            fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, str);
-        }
-         */
-        //else {
-            fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, playback_ms);
-        //}
+        fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, playback_ms);
     }
 }
 
@@ -1672,36 +1638,6 @@ static bool pause_current_playing_for(switch_core_session_t *session) {
             switch_set_flag_locked(fhp, SWITCH_FILE_PAUSE);
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
         }
-        /*
-        switch_channel_t *channel = switch_core_session_get_channel(session);
-        const char *str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
-        const char *str_record_start_timestamp = switch_channel_get_variable(channel, "record_start_timestamp");
-        const char *str_playback_start_timestamp = switch_channel_get_variable(channel, "playback_start_timestamp");
-        const char *str_current_ai_content_id = switch_channel_get_variable(channel, "current_ai_content_id");
-        const char *str_playback_ms = nullptr;
-
-        if (fhp->native_rate >= 1000) {
-            uint32_t last_playback_ms = 0;
-            const char *str_last_playback_ms = switch_channel_get_variable(channel, "last_playback_ms");
-            if (!str_last_playback_ms) {
-                last_playback_ms = fhp->samples_in / (fhp->native_rate / 1000);
-                switch_channel_set_variable_printf(channel, "last_playback_ms", "%d", last_playback_ms);
-                str_playback_ms = switch_channel_get_variable(channel, "last_playback_ms");
-            }
-            else {
-                last_playback_ms = fhp->samples_in / (fhp->native_rate / 1000);
-                str_playback_ms = switch_core_session_sprintf(session, "%d", last_playback_ms - switch_safe_atol(str_last_playback_ms, 0));
-                switch_channel_set_variable_printf(channel, "last_playback_ms", "%d", last_playback_ms);
-            }
-        }
-        fire_report_ai_speak(switch_core_session_get_uuid(session),
-                             str_current_ai_content_id,
-                             str_ccs_call_id,
-                             str_record_start_timestamp,
-                             str_playback_start_timestamp,
-                             switch_core_session_sprintf(session, "%ld", switch_micro_time_now()),
-                             str_playback_ms);
-                             */
         switch_ivr_release_file_handle(session, &fhp);
         return true;
     } else {
@@ -1722,10 +1658,6 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
         }
         switch_ivr_release_file_handle(session, &fhp);
-        /*
-        switch_channel_t *channel = switch_core_session_get_channel(session);
-        switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%ld", switch_micro_time_now());
-         */
         return true;
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
@@ -1833,12 +1765,6 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
 
             switch_mutex_unlock(ctx->mutex);
 
-            if (_content_id) {
-                switch_channel_set_variable_printf(channel, "current_ai_content_id", "%s", _content_id);
-            }
-            // clear last_playback_ms variable
-            switch_channel_set_variable(channel, "last_playback_ms", nullptr);
-
             // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
             //  We meet : ... Locked, Waiting on external entities
             switch_core_session_rwunlock(session4play);
@@ -1846,7 +1772,6 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s,vars_start_timestamp=%ld}%s",
                                                        _content_id, _vars_playback_id, switch_micro_time_now(), _file);
             switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
-
         }
     }
 
