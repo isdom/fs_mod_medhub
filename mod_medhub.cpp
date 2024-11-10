@@ -397,6 +397,16 @@ public:
         }
 
         m_client.stop_perpetual();
+//        void close(connection_hdl hdl, close::status::value const code,
+//                   std::string const & reason);
+        // https://docs.websocketpp.org/faq.html
+        // How do I cleanly exit an Asio transport based program
+        // For clients, if you have engaged perpetual mode with websocketpp::transport::asio::endpoint::start_perpetual,
+        //          disable it with websocketpp::transport::asio::endpoint::stop_perpetual.
+        // For both, run websocketpp::endpoint::close or websocketpp::connection::close on all currently outstanding connections.
+        //          This will initiate the WebSocket closing handshake for these connections
+        m_client.close(m_hdl, websocketpp::close::status::normal, "");
+
         m_thread->join();
 
         on_channel_closed(m_asr_ctx);
