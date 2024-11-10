@@ -101,6 +101,12 @@ typedef struct {
     bool pause_on_speak;
 } medhub_context_t;
 
+std::string getThreadIdOfString(const std::thread::id &id) {
+    std::stringstream sin;
+    sin << id;
+    return sin.str();
+}
+
 /**
  * 识别启动回调函数
  *
@@ -231,12 +237,6 @@ public:
 
         m_client.set_fail_handler(bind(&WebsocketClient::on_fail, this, _1));
         m_client.clear_access_channels(websocketpp::log::alevel::all);
-    }
-
-    std::string getThreadIdOfString(const std::thread::id &id) {
-        std::stringstream sin;
-        sin << id;
-        return sin.str();
     }
 
     bool is_connected() {
@@ -638,17 +638,19 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         if (ctx->cancel_on_speak) {
             stop_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
+                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                                  "on_sentence_begin: stop playing for cancel_on_speak, session [%s]\n",
-                                  switch_core_session_get_uuid(ctx->session));
+                                  "on_sentence_begin: thread[%s] stop playing for cancel_on_speak, session [%s]\n",
+                                  id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
         }
         else if (ctx->pause_on_speak) {
             pause_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
+                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                                  "on_sentence_begin: pause playing for pause_on_speak, session [%s]\n",
-                                  switch_core_session_get_uuid(ctx->session));
+                                  "on_sentence_begin: thread[%s] pause playing for pause_on_speak, session [%s]\n",
+                                  id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
         }
     }
@@ -679,9 +681,10 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         if (ctx->pause_on_speak) {
             resume_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
+                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                                  "on_sentence_end: resume playing for pause_on_speak, session [%s]\n",
-                                  switch_core_session_get_uuid(ctx->session));
+                                  "on_sentence_end: thread[%s] resume playing for pause_on_speak, session [%s]\n",
+                                  id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
         }
     }
@@ -1446,6 +1449,14 @@ static void fire_report_ai_speak(const char *uuid,
         switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Play-Time-Ms", playback_ms);
         switch_event_fire(&event);
     }
+}
+
+void dump_event(switch_event_t *event) {
+    char *buf;
+
+    switch_event_serialize(event, &buf, SWITCH_TRUE);
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "\nEVENT (text version)\n--------------------------------\n%s", buf);
+    switch_safe_free(buf);
 }
 
 static void on_record_start(switch_event_t *event) {
