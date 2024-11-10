@@ -210,9 +210,9 @@ public:
     // wss_client;
     typedef websocketpp::lib::lock_guard<websocketpp::lib::mutex> scoped_lock;
 
-    WebsocketClient(int is_ssl, medhub_context_t *asr_ctx)
+    WebsocketClient(int is_ssl, medhub_context_t *medhub_ctx)
     : m_open(false), m_done(false) {
-        m_asr_ctx = asr_ctx;
+        _medhub_ctx = medhub_ctx;
 
         // set up access channels to only log interesting things
         m_client.clear_access_channels(websocketpp::log::alevel::all);
@@ -256,9 +256,9 @@ public:
                 }
 
                 if (hubevent["header"]["name"] == "TranscriptionStarted") {
-                    on_transcription_started(m_asr_ctx, hubevent);
+                    on_transcription_started(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionCompleted") {
-                    on_transcription_completed(m_asr_ctx, hubevent);
+                    on_transcription_completed(_medhub_ctx, hubevent);
                     {
                         websocketpp::lib::error_code ec;
                         m_client.close(hdl, websocketpp::close::status::going_away, "", ec);
@@ -268,24 +268,24 @@ public:
                         }
                     }
                 } else if (hubevent["header"]["name"] == "SentenceBegin") {
-                    on_sentence_begin(m_asr_ctx, hubevent);
+                    on_sentence_begin(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionResultChanged") {
-                    on_transcription_result_changed(m_asr_ctx, hubevent);
+                    on_transcription_result_changed(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "SentenceEnd") {
-                    on_sentence_end(m_asr_ctx, hubevent);
+                    on_sentence_end(_medhub_ctx, hubevent);
                 }
 #if ENABLE_MEDHUB_PLAYBACK
                 else if (hubevent["header"]["name"] == "PlaybackStart") {
-                    on_playback_start(m_asr_ctx, hubevent);
+                    on_playback_start(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "PlaybackStop") {
-                    on_playback_stop(m_asr_ctx, hubevent);
+                    on_playback_stop(_medhub_ctx, hubevent);
                 }
 #endif
             }
                 break;
 #if ENABLE_MEDHUB_PLAYBACK
             case websocketpp::frame::opcode::binary:
-                on_playback_data(m_asr_ctx, (uint8_t *) payload.data(), (int32_t) payload.size());
+                on_playback_data(_medhub_ctx, (uint8_t *) payload.data(), (int32_t) payload.size());
                 break;
 #endif
             default:
@@ -364,35 +364,37 @@ public:
     }
 
     void stop() {
-        nlohmann::json json_stopTranscription = {
-                {"header", {
-                        // 当次消息请求ID，随机生成32位唯一ID。
-                        //{"message_id", message_id},
-                        // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
-                        //{"task_id", m_task_id},
-                        //{"namespace", "FlowingSpeechSynthesizer"},
-                        {"name", "StopTranscription"}
-                        //{"appkey", m_appkey}
-                }} //,
-                //{"payload", {
-                //                   {"format", "pcm"},
-                //                   {"sample_rate", 16000},
-                //                   {"enable_subtitle", true}
-                //           }}
-        };
+        if (_medhub_ctx->started) {
+            nlohmann::json json_stopTranscription = {
+                    {"header", {
+                            // 当次消息请求ID，随机生成32位唯一ID。
+                            //{"message_id", message_id},
+                            // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                            //{"task_id", m_task_id},
+                            //{"namespace", "FlowingSpeechSynthesizer"},
+                            {"name", "StopTranscription"}
+                            //{"appkey", m_appkey}
+                    }} //,
+                    //{"payload", {
+                    //                   {"format", "pcm"},
+                    //                   {"sample_rate", 16000},
+                    //                   {"enable_subtitle", true}
+                    //           }}
+            };
 
-        const std::string str_stopTranscription = json_stopTranscription.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop: send StopTranscription command, detail: %s\n",
-                          str_stopTranscription.c_str());
+            const std::string str_stopTranscription = json_stopTranscription.dump();
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop: send StopTranscription command, detail: %s\n",
+                              str_stopTranscription.c_str());
 
-        websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_stopTranscription, websocketpp::frame::opcode::text, ec);
-        if (ec) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send stop msg failed: %s\n",
-                              ec.message().c_str());
-        } else {
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "medhub send stop msg success\n");
+            websocketpp::lib::error_code ec;
+            m_client.send(m_hdl, str_stopTranscription, websocketpp::frame::opcode::text, ec);
+            if (ec) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send stop msg failed: %s\n",
+                                  ec.message().c_str());
+            } else {
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "medhub send stop msg success\n");
+                }
             }
         }
 
@@ -409,7 +411,7 @@ public:
 
         m_thread->join();
 
-        on_channel_closed(m_asr_ctx);
+        on_channel_closed(_medhub_ctx);
     }
 
     // The open handler will signal that we are ready to start sending data
@@ -446,7 +448,7 @@ public:
             scoped_lock guard(m_lock);
             m_done = true;
         }
-        on_task_failed(m_asr_ctx);
+        on_task_failed(_medhub_ctx);
     }
 
     void sendAudio(uint8_t *dp, size_t data_len, websocketpp::lib::error_code &ec) {
@@ -566,7 +568,7 @@ public:
 
 private:
 
-    medhub_context_t *m_asr_ctx;
+    medhub_context_t *_medhub_ctx;
     websocketpp::connection_hdl m_hdl;
     websocketpp::lib::mutex m_lock;
     bool m_open;
