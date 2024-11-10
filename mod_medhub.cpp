@@ -1497,7 +1497,9 @@ static void on_playback_start(switch_event_t *event) {
     event_timestamp = hdr->value;
 
     hdr = switch_event_get_header_ptr(event, "vars_start_timestamp");
-    start_timestamp = hdr->value;
+    if (hdr) {
+        start_timestamp = hdr->value;
+    }
 
     if (event_timestamp && start_timestamp) {
         long diff = (switch_safe_atol(event_timestamp, 0) - switch_safe_atol(start_timestamp, 0)) / 1000L;
@@ -1822,9 +1824,9 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
 
             switch_mutex_unlock(ctx->mutex);
 
-            //if (_content_id) {
-            //    switch_channel_set_variable_printf(channel, "current_ai_content_id", "%s", _content_id);
-            //}
+            if (_content_id) {
+                switch_channel_set_variable_printf(channel, "current_ai_content_id", "%s", _content_id);
+            }
             // clear last_playback_ms variable
             switch_channel_set_variable(channel, "last_playback_ms", nullptr);
 
@@ -1832,7 +1834,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             //  We meet : ... Locked, Waiting on external entities
             switch_core_session_rwunlock(session4play);
 
-            const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s, vars_start_timestamp=%ld}%s",
+            const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s,vars_start_timestamp=%ld}%s",
                                                        _content_id, _vars_playback_id, switch_micro_time_now(), _file);
             switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
 
