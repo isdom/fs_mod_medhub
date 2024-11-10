@@ -1541,7 +1541,7 @@ static void on_playback_stop(switch_event_t *event) {
     hdr = switch_event_get_header_ptr(event, "Unique-ID");
     uuid = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: uuid: %s", hdr->value);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s]", uuid);
     }
 
     switch_core_session *session  = switch_core_session_force_locate(uuid);
@@ -1562,24 +1562,27 @@ static void on_playback_stop(switch_event_t *event) {
             switch_mutex_unlock(ctx->mutex);
         }
         switch_core_session_rwunlock(session);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "on_playback_stop: switch_core_session_force_locate [%s] failed, maybe ended\n", uuid);
     }
 
     hdr = switch_event_get_header_ptr(event, "Playback-Status");
     status = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: status: %s", hdr->value);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: status: %s", status);
     }
 
     hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
     file = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: path: %s", hdr->value);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: path: %s", file);
     }
 
     hdr = switch_event_get_header_ptr(event, "variable_playback_last_offset_pos");
     offset = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: pos: %s", hdr->value);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: pos: %s", offset);
     }
 
     hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
@@ -1597,7 +1600,7 @@ static void on_playback_stop(switch_event_t *event) {
         }
     }
 
-    hdr = switch_event_get_header_ptr(event, "variable_current_ai_content_id");
+    hdr = switch_event_get_header_ptr(event, "content_id");
     if (hdr) {
         content_id = hdr->value;
         if (medhub_globals->_debug) {
@@ -1614,10 +1617,11 @@ static void on_playback_stop(switch_event_t *event) {
         if (hdr) {
             record_start_timestamp = hdr->value;
         }
-        hdr = switch_event_get_header_ptr(event, "variable_playback_start_timestamp");
+        hdr = switch_event_get_header_ptr(event, "vars_start_timestamp");
         if (hdr) {
             playback_start_timestamp = hdr->value;;
         }
+        /*
         hdr = switch_event_get_header_ptr(event, "variable_last_playback_ms");
         if (hdr) {
             last_playback_ms = hdr->value;
@@ -1631,9 +1635,10 @@ static void on_playback_stop(switch_event_t *event) {
             }
             fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, str);
         }
-        else {
+         */
+        //else {
             fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, playback_ms);
-        }
+        //}
     }
 }
 
@@ -1667,6 +1672,7 @@ static bool pause_current_playing_for(switch_core_session_t *session) {
             switch_set_flag_locked(fhp, SWITCH_FILE_PAUSE);
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
         }
+        /*
         switch_channel_t *channel = switch_core_session_get_channel(session);
         const char *str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
         const char *str_record_start_timestamp = switch_channel_get_variable(channel, "record_start_timestamp");
@@ -1688,7 +1694,6 @@ static bool pause_current_playing_for(switch_core_session_t *session) {
                 switch_channel_set_variable_printf(channel, "last_playback_ms", "%d", last_playback_ms);
             }
         }
-        switch_ivr_release_file_handle(session, &fhp);
         fire_report_ai_speak(switch_core_session_get_uuid(session),
                              str_current_ai_content_id,
                              str_ccs_call_id,
@@ -1696,6 +1701,8 @@ static bool pause_current_playing_for(switch_core_session_t *session) {
                              str_playback_start_timestamp,
                              switch_core_session_sprintf(session, "%ld", switch_micro_time_now()),
                              str_playback_ms);
+                             */
+        switch_ivr_release_file_handle(session, &fhp);
         return true;
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
@@ -1715,8 +1722,10 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
         }
         switch_ivr_release_file_handle(session, &fhp);
+        /*
         switch_channel_t *channel = switch_core_session_get_channel(session);
         switch_channel_set_variable_printf(channel, "playback_start_timestamp", "%ld", switch_micro_time_now());
+         */
         return true;
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
