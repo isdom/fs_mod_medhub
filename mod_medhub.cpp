@@ -85,6 +85,7 @@ typedef struct {
     int             asr_stopped;
     int             asr_starting;
     switch_audio_resampler_t *re_sampler;
+    int             asr_current_sentence_idx;
 
 #if ENABLE_MEDHUB_PLAYBACK
     // playback fields
@@ -618,9 +619,14 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             "time": 320
         }
     } */
+    const int idx = hub_event["payload"]["index"];
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_begin: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_sentence_begin: medhub idx: %d\n", idx);
     }
+    switch_mutex_lock(ctx->mutex);
+    ctx->asr_current_sentence_idx = idx; // means user speak begin
+    switch_mutex_unlock(ctx->mutex);
+
     if (ctx->asr_callback) {
         ctx->asr_callback->on_asr_sentence_begin_func(ctx->asr_callback->asr_caller);
     }
@@ -668,6 +674,7 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         }
     } */
     switch_mutex_lock(ctx->mutex);
+    ctx->asr_current_sentence_idx = 0; // means user speak ended
     if (ctx->content_id) {
         if (ctx->pause_on_speak) {
             resume_current_playing_for(ctx->session);
@@ -1624,6 +1631,10 @@ static void on_playback_stop(switch_event_t *event) {
     }
 }
 
+static bool is_speaking(medhub_context_t *ctx) {
+    return ctx->asr_current_sentence_idx != 0;
+}
+
 static bool is_playing(medhub_context_t *ctx) {
     return ctx->content_id != nullptr;
 }
@@ -1770,14 +1781,25 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             switch_core_session_rwunlock(session4play);
         }
         else {
+            bool can_play = true;
+            bool cancel_on_speak = _cancel_on_speak && atoi(_cancel_on_speak);
+            bool pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
+
             switch_mutex_lock(ctx->mutex);
             if (is_playing(ctx)) {
                 stop_current_playing_for(ctx->session);
             }
-            ctx->content_id = _content_id ? switch_core_session_strdup(session4play, _content_id) : nullptr;
-            ctx->playback_file = switch_core_session_strdup(session4play, _file);
-            ctx->cancel_on_speak = _cancel_on_speak && atoi(_cancel_on_speak);
-            ctx->pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
+
+            if (is_speaking(ctx) && cancel_on_speak) {
+                can_play = false;
+            }
+
+            if (can_play) {
+                ctx->content_id = _content_id ? switch_core_session_strdup(session4play, _content_id) : nullptr;
+                ctx->playback_file = switch_core_session_strdup(session4play, _file);
+                ctx->cancel_on_speak = cancel_on_speak;
+                ctx->pause_on_speak = pause_on_speak;
+            }
 
             switch_mutex_unlock(ctx->mutex);
 
@@ -1785,9 +1807,11 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             //  We meet : ... Locked, Waiting on external entities
             switch_core_session_rwunlock(session4play);
 
-            const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s,vars_start_timestamp=%ld}%s",
-                                                       _content_id, _vars_playback_id, switch_micro_time_now(), _file);
-            switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+            if (can_play) {
+                const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s,vars_start_timestamp=%ld}%s",
+                                                           _content_id, _vars_playback_id, switch_micro_time_now(), _file);
+                switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+            }
         }
     }
 
