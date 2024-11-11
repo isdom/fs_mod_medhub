@@ -1468,12 +1468,30 @@ static void on_record_start(switch_event_t *event) {
 static void on_playback_start(switch_event_t *event) {
     // dump_event(event);
     switch_event_header_t *hdr;
-    const char *uuid, *event_timestamp = nullptr, *start_timestamp = nullptr;
+    const char *uuid, *playback_file_path = nullptr, *event_timestamp = nullptr, *start_timestamp = nullptr, *content_id = nullptr;
 
     hdr = switch_event_get_header_ptr(event, "Unique-ID");
     uuid = hdr->value;
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: session[%s]", uuid);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
+    playback_file_path = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] path: %s", uuid, playback_file_path);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "content_id");
+    if (hdr) {
+        content_id = hdr->value;
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: session[%s] event's content_id: %s", uuid, content_id);
+        }
+    } else {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: session[%s] event's content_id is null, path: %s", uuid, playback_file_path);
+        }
     }
 
     hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
@@ -1493,10 +1511,42 @@ static void on_playback_start(switch_event_t *event) {
     }
 }
 
+static void clear_playing_content(const char *session_uuid, const char *stopped_content_id) {
+    switch_core_session *session  = switch_core_session_force_locate(session_uuid);
+    if (!session) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "clear_playing_content: locate session [%s] failed, maybe ended\n",
+                          session_uuid);
+        return;
+    }
+
+    auto *ctx = (medhub_context_t *)switch_channel_get_private(switch_core_session_get_channel(session), MEDHUB_CTX_NAME);
+    if (!ctx) {
+        switch_core_session_rwunlock(session);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "clear_playing_content: can't found medhub ctx by %s\n", session_uuid);
+        return;
+    }
+
+    switch_mutex_lock(ctx->mutex);
+    if (stopped_content_id && ctx->content_id && strcmp(stopped_content_id, ctx->content_id) == 0) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id equals current content_id:%s, so clear content_id",
+                              session_uuid, stopped_content_id);
+        }
+        ctx->content_id = nullptr;
+        ctx->playback_file = nullptr;
+    }
+    else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id:%s !NOT! equals current content_id:%s, ignore.",
+                          session_uuid, stopped_content_id, ctx->content_id);
+    }
+    switch_mutex_unlock(ctx->mutex);
+    switch_core_session_rwunlock(session);
+}
+
 static void on_playback_stop(switch_event_t *event) {
     // dump_event(event);
     switch_event_header_t *hdr;
-    const char *uuid, *file, *offset, *status,
+    const char *uuid, *playback_file_path, *offset, *status,
             *content_id = nullptr,
             *ccs_call_id = nullptr,
             *record_start_timestamp = nullptr,
@@ -1511,63 +1561,35 @@ static void on_playback_stop(switch_event_t *event) {
     }
 
     hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
-    file = hdr->value;
+    playback_file_path = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] path: %s", uuid, file);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] path: %s", uuid, playback_file_path);
     }
 
     hdr = switch_event_get_header_ptr(event, "content_id");
     if (hdr) {
         content_id = hdr->value;
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] content_id: %s", uuid, content_id);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content_id: %s", uuid, content_id);
         }
     } else {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] content_id is null, file: %s", uuid, file);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content_id is null, path: %s", uuid, playback_file_path);
         }
     }
 
-    switch_core_session *session  = switch_core_session_force_locate(uuid);
-    if (session) {
-        switch_channel_t *channel = switch_core_session_get_channel(session);
-        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
-        if (!ctx) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_playback_stop: can't found medhub ctx by %s\n", uuid);
-        }
-        else {
-            switch_mutex_lock(ctx->mutex);
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: %s clear content_id: %s",
-                                  uuid, ctx->content_id);
-            }
-            if (content_id && ctx->content_id && strcmp(content_id, ctx->content_id) == 0) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content equals current content_id:%s, so clear content_id",
-                                  uuid, content_id);
-                ctx->content_id = nullptr;
-                ctx->playback_file = nullptr;
-            } else {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content:%s !NOT! equals current content_id:%s, ignore.",
-                                  uuid, content_id, ctx->content_id);
-            }
-            switch_mutex_unlock(ctx->mutex);
-        }
-        switch_core_session_rwunlock(session);
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
-                          "on_playback_stop: switch_core_session_force_locate [%s] failed, maybe ended\n", uuid);
-    }
+    clear_playing_content(uuid, content_id);
 
     hdr = switch_event_get_header_ptr(event, "Playback-Status");
     status = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: status: %s", status);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] status: %s", uuid, status);
     }
 
     hdr = switch_event_get_header_ptr(event, "variable_playback_last_offset_pos");
     offset = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: pos: %s", offset);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] pos: %s", uuid, offset);
     }
 
     hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
