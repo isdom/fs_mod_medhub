@@ -192,8 +192,7 @@ context_ptr OnTlsInit(const websocketpp::connection_hdl &) {
 }
 
 // template for tls or not config
-template<typename T>
-class WebsocketClient {
+template<typename T> class WebsocketClient {
 public:
     // typedef websocketpp::client<T> client;
     // typedef websocketpp::client<websocketpp::config::asio_tls_client>
@@ -441,7 +440,7 @@ public:
         on_task_failed(_medhub_ctx);
     }
 
-    void sendAudio(uint8_t *dp, size_t data_len, websocketpp::lib::error_code &ec) {
+    void send_audio_data(uint8_t *dp, size_t data_len, websocketpp::lib::error_code &ec) {
         m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
@@ -1089,7 +1088,7 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
 
         if (ctx->asr_started) {
             websocketpp::lib::error_code ec;
-            ctx->client->sendAudio((uint8_t *) data, (size_t) data_len, ec);
+            ctx->client->send_audio_data((uint8_t *) data, (size_t) data_len, ec);
 
             if (ec) {
                 ctx->asr_stopped = 1;
