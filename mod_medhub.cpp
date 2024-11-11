@@ -74,14 +74,14 @@ typedef struct {
 //======================================== fun asr start ===============
 
 typedef struct {
+    switch_mutex_t          *mutex;
     switch_core_session_t   *session;
-    medhub_client         *client;
+    medhub_client           *client;
 
     //  asr fields
-    int started;
-    int stopped;
-    int starting;
-    switch_mutex_t          *mutex;
+    int asr_started;
+    int asr_stopped;
+    int asr_starting;
     switch_audio_resampler_t *re_sampler;
     char                    *medhub_url;
     asr_callback_t          *asr_callback;
@@ -364,7 +364,7 @@ public:
     }
 
     void stop() {
-        if (_medhub_ctx->started) {
+        if (_medhub_ctx->asr_started) {
             nlohmann::json json_stopTranscription = {
                     {"header", {
                             // 当次消息请求ID，随机生成32位唯一ID。
@@ -599,8 +599,8 @@ void on_transcription_started(medhub_context_t *ctx, const nlohmann::json &hub_e
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_started: medhub\n");
     }
     switch_mutex_lock(ctx->mutex);
-    ctx->started = 1;
-    ctx->starting = 0;
+    ctx->asr_started = 1;
+    ctx->asr_starting = 0;
     switch_mutex_unlock(ctx->mutex);
 
     if (ctx->asr_callback) {
@@ -782,7 +782,7 @@ void on_task_failed(medhub_context_t *ctx) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_task_failed: medhub\n");
     }
     switch_mutex_lock(ctx->mutex);
-    ctx->started = 0;
+    ctx->asr_started = 0;
     switch_mutex_unlock(ctx->mutex);
 }
 
@@ -1058,7 +1058,7 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
 
 static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
     bool  ret_val = false;
-    if (ctx->stopped == 1) {
+    if (ctx->asr_stopped == 1) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "start_medhub: ctx->stopped\n");
         return ret_val;
     }
@@ -1097,12 +1097,12 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
             }
         }
 
-        if (ctx->started) {
+        if (ctx->asr_started) {
             websocketpp::lib::error_code ec;
             ctx->client->sendAudio((uint8_t *) data, (size_t) data_len, ec);
 
             if (ec) {
-                ctx->stopped = 1;
+                ctx->asr_stopped = 1;
                 switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send audio failed: %s -> on channel: %s\n",
                                   ec.message().c_str(), switch_channel_get_name(channel));
@@ -1301,9 +1301,9 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
         goto unlock;
     }
 
-    ctx->started = 0;
-    ctx->stopped = 0;
-    ctx->starting = 0;
+    ctx->asr_started = 0;
+    ctx->asr_stopped = 0;
+    ctx->asr_starting = 0;
     ctx->session = session;
     ctx->medhub_url = switch_core_session_strdup(session, url);
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
@@ -1326,9 +1326,9 @@ static void connect_medhub(medhub_context_t *ctx) {
     }
     if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
         switch_mutex_lock(ctx->mutex);
-        if (ctx->started == 0) {
-            if (ctx->starting == 0) {
-                ctx->starting = 1;
+        if (ctx->asr_started == 0) {
+            if (ctx->asr_starting == 0) {
+                ctx->asr_starting = 1;
                 if (medhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Connecting to Media Hub %s \n", ctx->medhub_url);
                 }
@@ -1341,7 +1341,7 @@ static void connect_medhub(medhub_context_t *ctx) {
                 }
 
                 if (ctx->client->connect(std::string(ctx->medhub_url)) < 0) {
-                    ctx->stopped = 1;
+                    ctx->asr_stopped = 1;
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                       "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
                                       ctx->medhub_url, switch_channel_get_name(channel));
