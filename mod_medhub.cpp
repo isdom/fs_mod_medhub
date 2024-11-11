@@ -169,17 +169,6 @@ void on_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub_event);
 void on_playback_data(medhub_context_t *ctx, uint8_t *data, int32_t len);
 #endif
 
-/**
- * Define a semi-cross platform helper method that waits/sleeps for a bit.
- */
-void WaitABit(long milliseconds) {
-#ifdef WIN32
-    Sleep(1000);
-#else
-    usleep(1000 * milliseconds);
-#endif
-}
-
 typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
 typedef websocketpp::lib::shared_ptr<websocketpp::lib::asio::ssl::context> context_ptr;
 
