@@ -75,16 +75,17 @@ typedef struct {
 
 typedef struct {
     switch_mutex_t          *mutex;
+    char                    *medhub_url;
     switch_core_session_t   *session;
     medhub_client           *client;
 
     //  asr fields
-    int asr_started;
-    int asr_stopped;
-    int asr_starting;
+    asr_callback_t  *asr_callback;
+    int             asr_started;
+    int             asr_stopped;
+    int             asr_starting;
     switch_audio_resampler_t *re_sampler;
-    char                    *medhub_url;
-    asr_callback_t          *asr_callback;
+
 #if ENABLE_MEDHUB_PLAYBACK
     // playback fields
     switch_codec_t          playback_codec;
