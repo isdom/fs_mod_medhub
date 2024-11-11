@@ -102,7 +102,7 @@ typedef struct {
     bool pause_on_speak;
 } medhub_context_t;
 
-std::string getThreadIdOfString(const std::thread::id &id) {
+std::string get_thread_id(const std::thread::id &id) {
     std::stringstream sin;
     sin << id;
     return sin.str();
@@ -249,7 +249,7 @@ public:
         switch (msg->get_opcode()) {
             case websocketpp::frame::opcode::text: {
                 nlohmann::json hubevent = nlohmann::json::parse(payload);
-                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
+                std::string id_str = get_thread_id(std::this_thread::get_id());
                 if (medhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "thread: %s, on_message = %s\n",
                                       id_str.c_str(),
@@ -641,7 +641,7 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         if (ctx->cancel_on_speak) {
             stop_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
-                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
+                std::string id_str = get_thread_id(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                   "on_sentence_begin: thread[%s] stop playing for cancel_on_speak, session [%s]\n",
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
@@ -650,7 +650,7 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         else if (ctx->pause_on_speak) {
             pause_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
-                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
+                std::string id_str = get_thread_id(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                   "on_sentence_begin: thread[%s] pause playing for pause_on_speak, session [%s]\n",
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
@@ -684,7 +684,7 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
         if (ctx->pause_on_speak) {
             resume_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
-                std::string id_str = getThreadIdOfString(std::this_thread::get_id());
+                std::string id_str = get_thread_id(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                   "on_sentence_end: thread[%s] resume playing for pause_on_speak, session [%s]\n",
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
