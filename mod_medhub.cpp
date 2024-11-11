@@ -1129,7 +1129,6 @@ static void stop_medhub(medhub_context_t *ctx) {
                               switch_channel_get_name(channel));
         }
         ctx->client->stop();
-        //7: 识别结束, 释放fac对象
         delete ctx->client;
         ctx->client = nullptr;
         if (medhub_globals->_debug) {
