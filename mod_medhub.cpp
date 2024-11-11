@@ -1510,11 +1510,21 @@ static void on_playback_stop(switch_event_t *event) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s]", uuid);
     }
 
+    hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
+    file = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] path: %s", uuid, file);
+    }
+
     hdr = switch_event_get_header_ptr(event, "content_id");
     if (hdr) {
         content_id = hdr->value;
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: content_id: %s", content_id);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] content_id: %s", uuid, content_id);
+        }
+    } else {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] content_id is null, file: %s", uuid, file);
         }
     }
 
@@ -1531,7 +1541,7 @@ static void on_playback_stop(switch_event_t *event) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: %s clear content_id: %s",
                                   uuid, ctx->content_id);
             }
-            if (strcmp(content_id, ctx->content_id) == 0) {
+            if (content_id && ctx->content_id && strcmp(content_id, ctx->content_id) == 0) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content equals current content_id:%s, so clear content_id",
                                   uuid, content_id);
                 ctx->content_id = nullptr;
@@ -1552,12 +1562,6 @@ static void on_playback_stop(switch_event_t *event) {
     status = hdr->value;
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: status: %s", status);
-    }
-
-    hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
-    file = hdr->value;
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: path: %s", file);
     }
 
     hdr = switch_event_get_header_ptr(event, "variable_playback_last_offset_pos");
