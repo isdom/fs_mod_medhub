@@ -1081,8 +1081,7 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
             memcpy(data, ctx->re_sampler->to, ctx->re_sampler->to_len * 2 * 1);
             data_len = ctx->re_sampler->to_len * 2 * 1;
             if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "ASR new samples:%d\n",
-                                  ctx->re_sampler->to_len);
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "asr new samples:%d\n", ctx->re_sampler->to_len);
             }
         }
 
