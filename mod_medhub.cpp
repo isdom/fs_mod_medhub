@@ -1386,8 +1386,7 @@ SWITCH_STANDARD_API(uuid_connect_medhub_function) {
                 char *var = ss[0];
                 char *val = ss[1];
                 if (medhub_globals->_debug) {
-                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG,
-                                      "uuid_connect_medhub: process arg[%s = %s]\n", var, val);
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "uuid_connect_medhub: process arg[%s = %s]\n", var, val);
                 }
                 if (!strcasecmp(var, "url")) {
                     _hub_url = val;
@@ -2108,10 +2107,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
  *  定义shutdown函数，关闭时运行
  */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_medhub_shutdown) {
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_medhub shutdown called\n");
+    
     // unregister global state handlers
     switch_core_remove_state_handler(&medhub_cs_handlers);
 
-    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_medhub shutdown called\n");
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_medhub unload\n");
     return SWITCH_STATUS_SUCCESS;
 }
