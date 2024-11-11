@@ -1137,8 +1137,7 @@ static void stop_medhub(medhub_context_t *ctx) {
         }
     } else {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                              "medhub has already stopped and released on channel:%s\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "medhub has already stopped and released on channel:%s\n",
                               switch_channel_get_name(channel));
         }
     }
