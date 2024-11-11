@@ -1510,6 +1510,14 @@ static void on_playback_stop(switch_event_t *event) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s]", uuid);
     }
 
+    hdr = switch_event_get_header_ptr(event, "content_id");
+    if (hdr) {
+        content_id = hdr->value;
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: content_id: %s", content_id);
+        }
+    }
+
     switch_core_session *session  = switch_core_session_force_locate(uuid);
     if (session) {
         switch_channel_t *channel = switch_core_session_get_channel(session);
@@ -1523,8 +1531,15 @@ static void on_playback_stop(switch_event_t *event) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: %s clear content_id: %s",
                                   uuid, ctx->content_id);
             }
-            ctx->content_id = nullptr;
-            ctx->playback_file = nullptr;
+            if (strcmp(content_id, ctx->content_id) == 0) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content equals current content_id:%s, so clear content_id",
+                                  uuid, content_id);
+                ctx->content_id = nullptr;
+                ctx->playback_file = nullptr;
+            } else {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] event's content:%s !NOT! equals current content_id:%s, ignore.",
+                                  uuid, content_id, ctx->content_id);
+            }
             switch_mutex_unlock(ctx->mutex);
         }
         switch_core_session_rwunlock(session);
@@ -1563,14 +1578,6 @@ static void on_playback_stop(switch_event_t *event) {
         playback_ms = hdr->value;
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: playback_ms: %s", playback_ms);
-        }
-    }
-
-    hdr = switch_event_get_header_ptr(event, "content_id");
-    if (hdr) {
-        content_id = hdr->value;
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: content_id: %s", content_id);
         }
     }
 
@@ -2108,7 +2115,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
  */
 SWITCH_MODULE_SHUTDOWN_FUNCTION(mod_medhub_shutdown) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, " mod_medhub shutdown called\n");
-    
+
     // unregister global state handlers
     switch_core_remove_state_handler(&medhub_cs_handlers);
 
