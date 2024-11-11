@@ -1479,7 +1479,7 @@ static void on_playback_start(switch_event_t *event) {
     hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
     playback_file_path = hdr->value;
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_stop: session[%s] path: %s", uuid, playback_file_path);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: session[%s] path: %s", uuid, playback_file_path);
     }
 
     hdr = switch_event_get_header_ptr(event, "content_id");
