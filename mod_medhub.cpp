@@ -1701,6 +1701,39 @@ static void on_playback_stop(switch_event_t *event) {
     }
 }
 
+static void on_channel_answer(switch_event_t *event) {
+    switch_event_header_t *hdr;
+    const char *uuid;
+
+    hdr = switch_event_get_header_ptr(event, "Unique-ID");
+    uuid = hdr->value;
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_channel_answer: session [%s] answer", uuid);
+
+    switch_core_session *session  = switch_core_session_force_locate(uuid);
+    if (session) {
+        auto *ctx = (medhub_context_t *)switch_channel_get_private(switch_core_session_get_channel(session), MEDHUB_CTX_NAME);
+        if (ctx) {
+            switch_mutex_lock(ctx->mutex);
+            ctx->begin_idle_timestamp = switch_time_now();
+            switch_mutex_unlock(ctx->mutex);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_channel_answer: can't found medhub ctx by %s\n", uuid);
+        }
+        /*
+        switch_time_t idle_timeout = 10 * 1000 * 1000; // default idle timeout is 10 seconds
+        hdr = switch_event_get_header_ptr(event, "variable_idle_timeout");
+        if (hdr) {
+            const char *idle = hdr->value;
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_channel_answer: idle_timeout: [%s]", idle);
+            idle_timeout = switch_safe_atol(idle, 10 * 1000) * 1000L;
+        }
+        */
+        switch_core_session_rwunlock(session);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "on_channel_answer: session [%s] switch_core_session_force_locate failed!\n", uuid);
+    }
+}
+
 static bool is_speaking(medhub_context_t *ctx) {
     return ctx->asr_current_sentence_idx != 0;
 }
@@ -2223,6 +2256,11 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
     if (switch_event_bind(modname, SWITCH_EVENT_PLAYBACK_STOP, SWITCH_EVENT_SUBCLASS_ANY,
                           on_playback_stop, nullptr) != SWITCH_STATUS_SUCCESS) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Bind SWITCH_EVENT_PLAYBACK_STOP event failed!\n");
+    }
+
+    if (switch_event_bind(modname, SWITCH_EVENT_CHANNEL_ANSWER, SWITCH_EVENT_SUBCLASS_ANY,
+                          on_channel_answer, nullptr) != SWITCH_STATUS_SUCCESS) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Bind SWITCH_EVENT_CHANNEL_ANSWER event failed!\n");
     }
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_medhub loaded\n");
