@@ -163,6 +163,8 @@ void on_task_failed(medhub_context_t *ctx);
  */
 void on_channel_closed(medhub_context_t *ctx);
 
+static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json);
+
 static bool stop_current_playing_for(switch_core_session_t *session);
 static bool pause_current_playing_for(switch_core_session_t *session);
 static bool resume_current_playing_for(switch_core_session_t *session);
@@ -269,6 +271,8 @@ public:
                     on_transcription_result_changed(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "SentenceEnd") {
                     on_sentence_end(_medhub_ctx, hubevent);
+                } else if (hubevent["header"]["name"] == "CheckIdle") {
+                    on_check_idle(_medhub_ctx, hubevent);
                 }
 #if ENABLE_MEDHUB_PLAYBACK
                 else if (hubevent["header"]["name"] == "PlaybackStart") {
@@ -815,6 +819,32 @@ void on_channel_closed(medhub_context_t *ctx) {
     }
      */
 }
+
+static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
+    switch_time_t idle_timeout = 10 * 1000 * 1000L;
+    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
+        const char *str_idle_timeout = switch_channel_get_variable(channel, "idle_timeout");
+        if (str_idle_timeout) {
+            idle_timeout = switch_safe_atol(str_idle_timeout, 10 * 1000) * 1000L;
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle_timeout: [%ld]", idle_timeout);
+        }
+
+        switch_core_session_rwunlock(ctx->session);
+    }
+
+    switch_mutex_lock(ctx->mutex);
+
+    if (switch_time_now() - ctx->begin_idle_timestamp >= idle_timeout) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle time >=: [%ld]", idle_timeout);
+        ctx->begin_idle_timestamp = switch_time_now();
+    }
+
+    switch_mutex_unlock(ctx->mutex);
+
+}
+
+
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStart 事件
