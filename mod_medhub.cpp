@@ -838,16 +838,32 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
 
     switch_mutex_lock(ctx->mutex);
     const long idle_duration_ms = (switch_time_now() - ctx->begin_idle_timestamp) / 1000L;
+    bool _is_speaking = is_speaking(ctx);
+    bool _is_playing = is_playing(ctx);
+    switch_mutex_unlock(ctx->mutex);
 
-    if (is_answered && !is_speaking(ctx) && !is_playing(ctx) && ( idle_duration_ms >= idle_timeout_ms)) {
+    if (is_answered && !_is_speaking && !_is_playing && (idle_duration_ms >= idle_timeout_ms)) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld ms >=: [%ld] ms", idle_duration_ms, idle_timeout_ms);
+        switch_event_t *event = nullptr;
+        if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
+            const char *unique_id = switch_core_session_get_uuid(ctx->session);
+            if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
+                switch_event_set_subclass_name(event, "znc_idle_timeout");
+                switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Unique-ID", unique_id);
+                switch_event_add_header(event, SWITCH_STACK_BOTTOM, "Idle-Time", "%ld", idle_duration_ms);
+                switch_event_fire(&event);
+            }
+            switch_core_session_rwunlock(ctx->session);
+        } else {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_check_idle: session [%s] switch_core_session_read_lock failed",
+                              switch_core_session_get_uuid(ctx->session));
+        }
         // ctx->begin_idle_timestamp = switch_time_now();
     } else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld ms",
-                          is_answered, is_speaking(ctx), is_playing(ctx), idle_duration_ms);
+                          is_answered, _is_speaking, _is_playing, idle_duration_ms);
     }
 
-    switch_mutex_unlock(ctx->mutex);
 }
 
 
