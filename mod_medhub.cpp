@@ -80,6 +80,8 @@ typedef struct {
     switch_core_session_t   *session;
     medhub_client           *client;
 
+    switch_time_t           begin_idle_timestamp;
+
     //  asr fields
     asr_callback_t  *asr_callback;
     int             asr_started;
@@ -658,6 +660,8 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     switch_mutex_unlock(ctx->mutex);
 }
 
+void update_idle_timestamp(medhub_context_t *ctx) { ctx->begin_idle_timestamp = switch_time_now(); }
+
 /**
  * @brief 一句话结束回调函数
  *
@@ -689,6 +693,10 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
         }
+    }
+    if (!is_playing(ctx)) {
+        // neither is_playing(...) nor is_speaking(...) means idle
+        update_idle_timestamp(ctx);
     }
     switch_mutex_unlock(ctx->mutex);
 
@@ -1300,6 +1308,7 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
     ctx->asr_starting = 0;
     ctx->session = session;
     ctx->medhub_url = switch_core_session_strdup(session, url);
+    ctx->begin_idle_timestamp = switch_time_now();
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
     switch_channel_set_private(switch_core_session_get_channel(session), MEDHUB_CTX_NAME, ctx);
@@ -1546,6 +1555,10 @@ static void clear_playing_content(const char *session_uuid, const char *stopped_
         }
         ctx->content_id = nullptr;
         ctx->playback_file = nullptr;
+        if (!is_speaking(ctx)) {
+            // neither is_playing(...) nor is_speaking(...) means idle
+            update_idle_timestamp(ctx);
+        }
     }
     else {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id:%s !NOT! equals current content_id:%s, ignore.",
