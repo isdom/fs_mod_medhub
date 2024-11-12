@@ -837,13 +837,14 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
     }
 
     switch_mutex_lock(ctx->mutex);
+    const switch_time_t  idle_duration = switch_time_now() - ctx->begin_idle_timestamp;
 
-    if (is_answered && !is_speaking(ctx) && !is_playing(ctx) && (switch_time_now() - ctx->begin_idle_timestamp >= idle_timeout)) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle time >=: [%ld]", idle_timeout);
+    if (is_answered && !is_speaking(ctx) && !is_playing(ctx) && ( idle_duration >= idle_timeout)) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld >=: [%ld]", idle_duration, idle_timeout);
         // ctx->begin_idle_timestamp = switch_time_now();
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d",
-                          is_answered, is_speaking(ctx), is_playing(ctx));
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld",
+                          is_answered, is_speaking(ctx), is_playing(ctx), idle_duration);
     }
 
     switch_mutex_unlock(ctx->mutex);
