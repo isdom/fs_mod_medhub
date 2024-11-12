@@ -821,7 +821,7 @@ void on_channel_closed(medhub_context_t *ctx) {
 }
 
 static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
-    switch_time_t idle_timeout = 10 * 1000 * 1000L;
+    long idle_timeout_ms = 10 * 1000L;
     bool is_answered = false;
     if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
         switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
@@ -829,22 +829,22 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
         is_answered = switch_channel_test_flag(channel, CF_ANSWERED);
         const char *str_idle_timeout = switch_channel_get_variable(channel, "idle_timeout");
         if (str_idle_timeout) {
-            idle_timeout = switch_safe_atol(str_idle_timeout, 10 * 1000) * 1000L;
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle_timeout: [%ld]", idle_timeout);
+            idle_timeout_ms = switch_safe_atol(str_idle_timeout, 10 * 1000);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle_timeout: [%ld] ms", idle_timeout_ms);
         }
 
         switch_core_session_rwunlock(ctx->session);
     }
 
     switch_mutex_lock(ctx->mutex);
-    const switch_time_t  idle_duration = switch_time_now() - ctx->begin_idle_timestamp;
+    const long idle_duration_ms = (switch_time_now() - ctx->begin_idle_timestamp) / 1000L;
 
-    if (is_answered && !is_speaking(ctx) && !is_playing(ctx) && ( idle_duration >= idle_timeout)) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld >=: [%ld]", idle_duration, idle_timeout);
+    if (is_answered && !is_speaking(ctx) && !is_playing(ctx) && ( idle_duration_ms >= idle_timeout_ms)) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld ms >=: [%ld] ms", idle_duration_ms, idle_timeout_ms);
         // ctx->begin_idle_timestamp = switch_time_now();
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld",
-                          is_answered, is_speaking(ctx), is_playing(ctx), idle_duration);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld ms",
+                          is_answered, is_speaking(ctx), is_playing(ctx), idle_duration_ms);
     }
 
     switch_mutex_unlock(ctx->mutex);
