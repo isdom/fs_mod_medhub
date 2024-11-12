@@ -38,6 +38,7 @@ typedef struct {
     int32_t    sentence_time;
     double     confidence;
     const char *sentence;
+    bool        is_playing;
 } asr_sentence_result_t;
 
 typedef void (*on_asr_started_func_t) (void *);
@@ -163,6 +164,9 @@ void on_channel_closed(medhub_context_t *ctx);
 static bool stop_current_playing_for(switch_core_session_t *session);
 static bool pause_current_playing_for(switch_core_session_t *session);
 static bool resume_current_playing_for(switch_core_session_t *session);
+
+static bool is_speaking(medhub_context_t *ctx);
+static bool is_playing(medhub_context_t *ctx);
 
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event);
@@ -694,7 +698,8 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             hub_event["payload"]["begin_time"],
             hub_event["payload"]["time"],
             hub_event["payload"]["confidence"],
-            result.c_str()
+            result.c_str(),
+            is_playing(ctx)
     };
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: medhub\n");
