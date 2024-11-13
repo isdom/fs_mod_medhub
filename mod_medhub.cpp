@@ -407,7 +407,9 @@ public:
         //          disable it with websocketpp::transport::asio::endpoint::stop_perpetual.
         // For both, run websocketpp::endpoint::close or websocketpp::connection::close on all currently outstanding connections.
         //          This will initiate the WebSocket closing handshake for these connections
-        m_client.close(m_hdl, websocketpp::close::status::normal, "");
+        if (is_connected()) {
+            m_client.close(m_hdl, websocketpp::close::status::normal, "");
+        }
 
         m_thread->join();
 
@@ -994,7 +996,7 @@ medhub_client *generateMediaHubClient(medhub_context_t *ctx) {
 #endif
 
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "proxy url is:%s\n", ctx->medhub_url);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "medhub url is:%s\n", ctx->medhub_url);
     }
     return client;
 }
@@ -1201,6 +1203,10 @@ static void stop_medhub(medhub_context_t *ctx) {
                               switch_channel_get_name(channel));
         }
         ctx->client->stop();
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "after stop medhub on channel: %s\n",
+                              switch_channel_get_name(channel));
+        }
         delete ctx->client;
         ctx->client = nullptr;
         if (medhub_globals->_debug) {
