@@ -1,6 +1,4 @@
 #include <switch.h>
-#include <fstream>
-#include <math.h>
 
 #define ASIO_STANDALONE 1
 
@@ -10,7 +8,6 @@
 #include <websocketpp/client.hpp>
 #include <websocketpp/common/thread.hpp>
 #include <websocketpp/config/asio_client.hpp>
-#include <thread>
 
 #include "nlohmann/json.hpp"
 
