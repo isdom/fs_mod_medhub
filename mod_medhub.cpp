@@ -69,7 +69,7 @@ typedef struct {
 
 // public declare end
 
-//======================================== fun asr start ===============
+//======================================== media-hub client start ===============
 
 typedef struct {
     switch_mutex_t          *mutex;
