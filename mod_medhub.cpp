@@ -292,7 +292,7 @@ public:
     }
 
     // This method will block until the connection is complete
-    int connect(const std::string &uri) {
+    int connect(const std::string &uri, const std::string &sessionid) {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "connect to: %s \n", uri.c_str());
         }
@@ -309,6 +309,7 @@ public:
             // Grab a handle for this connection so we can talk to it in a thread
             // safe manor after the event loop starts.
             m_hdl = con->get_handle();
+            con->append_header("x-sessionid", sessionid);
 
             // Queue the connection. No DNS queries or network connections will be
             // made until the io_service event loop is run.
@@ -1395,10 +1396,16 @@ static void connect_medhub(medhub_context_t *ctx) {
                 ctx->client = client;
                 if (medhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Init Media Hub Client.%s\n",
-                                      switch_channel_get_name(channel));
+                                      switch_core_session_get_uuid(ctx->session));
                 }
 
-                if (ctx->client->connect(std::string(ctx->medhub_url)) < 0) {
+                std::string sessionid = switch_core_session_get_uuid(ctx->session);
+                const char *str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
+                if (str_ccs_call_id) {
+                    sessionid = str_ccs_call_id;
+                }
+
+                if (ctx->client->connect(std::string(ctx->medhub_url), sessionid) < 0) {
                     ctx->asr_stopped = 1;
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                       "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
