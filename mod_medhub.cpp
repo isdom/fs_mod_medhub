@@ -601,7 +601,7 @@ public:
         }
     }
 
-    bool is_done() {
+    bool is_done() const {
         return _is_done;
     }
 
@@ -1308,8 +1308,8 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
         switch_time_t start_wait = switch_time_now();
         cond_latch.wait_for();
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s: after cond_latch.wait_for(): %ld ms\n",
-                              switch_core_session_get_uuid(session), (switch_time_now() - start_wait)/1000);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s: after cond_latch.wait_for(): %ld ms/is_done: %d\n",
+                              switch_core_session_get_uuid(session), (switch_time_now() - start_wait)/1000, cond_latch.is_done());
         }
     }
 
