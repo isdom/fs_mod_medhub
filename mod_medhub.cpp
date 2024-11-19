@@ -72,6 +72,7 @@ typedef struct {
 //======================================== media-hub client start ===============
 
 typedef struct {
+    char                    *sessionid;
     switch_mutex_t          *mutex;
     char                    *medhub_url;
     switch_core_session_t   *session;
@@ -433,9 +434,8 @@ public:
 
     // The close handler will signal that we should stop sending data
     void on_close(const websocketpp::connection_hdl &) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "Connection closed, stopping data!\n");
-        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s: Connection closed, stopping data!\n",
+                          _medhub_ctx->sessionid);
 
         {
             scoped_lock guard(m_lock);
@@ -445,9 +445,8 @@ public:
 
     // The fail handler will signal that we should stop sending data
     void on_fail(const websocketpp::connection_hdl &) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Connection failed, stopping data!\n");
-        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "%s: Connection failed, stopping data!\n",
+                          _medhub_ctx->sessionid);
 
         {
             scoped_lock guard(m_lock);
@@ -580,6 +579,36 @@ private:
     bool m_done;
 
     on_connected_t _on_connected;
+};
+
+class condition_latch_t {
+    typedef websocketpp::lib::unique_lock<websocketpp::lib::mutex> cv_lock_t;
+    typedef websocketpp::lib::lock_guard<websocketpp::lib::mutex> scoped_lock_t;
+
+public:
+    void mark_done() {
+        {
+            scoped_lock_t guard(_lock);
+            _is_done = true;
+        }
+        _done_cond.notify_one();
+    }
+
+    void wait_for() {
+        cv_lock_t cv_lock(_lock);
+        while (!_is_done) {
+            _done_cond.wait_for(cv_lock, websocketpp::lib::chrono::milliseconds(10)); // wait for 10 ms
+        }
+    }
+
+    bool is_done() {
+        return _is_done;
+    }
+
+private:
+    bool _is_done = false;
+    websocketpp::lib::mutex _lock;
+    websocketpp::lib::condition_variable _done_cond;
 };
 
 /**
@@ -1137,6 +1166,9 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
         return nullptr;
     }
 
+    switch_channel_t *channel;
+    const char *str_ccs_call_id;
+
     medhub_context_t *ctx;
     if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session, sizeof(medhub_context_t)))) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
@@ -1144,6 +1176,14 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
         goto unlock;
     }
 
+    channel = switch_core_session_get_channel(session);
+    str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
+
+    if (!str_ccs_call_id) {
+        str_ccs_call_id = switch_core_session_get_uuid(session);
+    }
+
+    ctx->sessionid = switch_core_session_strdup(session, str_ccs_call_id);
     ctx->asr_started = 0;
     ctx->asr_stopped = 0;
     ctx->asr_starting = 0;
@@ -1152,7 +1192,7 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
     ctx->begin_idle_timestamp = switch_time_now();
     switch_mutex_init(&ctx->mutex, SWITCH_MUTEX_NESTED, switch_core_session_get_pool(session));
 
-    switch_channel_set_private(switch_core_session_get_channel(session), MEDHUB_CTX_NAME, ctx);
+    switch_channel_set_private(channel, MEDHUB_CTX_NAME, ctx);
 
     // increment medhub concurrent count
     switch_atomic_inc(&medhub_globals->medhub_concurrent_cnt);
@@ -1184,13 +1224,7 @@ static medhub_context_t *connect_medhub(medhub_context_t *ctx, const medhub_clie
                                       switch_core_session_get_uuid(ctx->session));
                 }
 
-                std::string sessionid = switch_core_session_get_uuid(ctx->session);
-                const char *str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
-                if (str_ccs_call_id) {
-                    sessionid = str_ccs_call_id;
-                }
-
-                if (ctx->client->connect(std::string(ctx->medhub_url), sessionid) < 0) {
+                if (ctx->client->connect(std::string(ctx->medhub_url), std::string(ctx->sessionid)) < 0) {
                     ctx->asr_stopped = 1;
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                       "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
@@ -1256,35 +1290,27 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
     }
 
     if (!_hub_url) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "%s init_medhub failed, missing hub url\n",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "%s: init_medhub failed, missing hub url\n",
                           switch_core_session_get_uuid(session));
         return nullptr;
     }
 
-    typedef websocketpp::lib::unique_lock<websocketpp::lib::mutex> cv_lock_t;
-    bool is_connected = false;
-    websocketpp::lib::mutex lock;
-    websocketpp::lib::condition_variable connected_cond;
+    condition_latch_t cond_latch;
 
-    auto *ctx = connect_medhub(init_medhub_ctx_for(_hub_url, argv[0]), [&is_connected, &lock, &connected_cond](medhub_client *client) {
-        {
-            medhub_client::scoped_lock guard(lock);
-            is_connected = true;
+    auto *ctx = connect_medhub(init_medhub_ctx_for(_hub_url, argv[0]), [&cond_latch, &session](medhub_client *client) {
+        cond_latch.mark_done();
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s: cond_latch.mark_done() called ms\n", switch_core_session_get_uuid(session));
         }
-        connected_cond.notify_one();
     });
 
     if (ctx) {
-        cv_lock_t cv_lock(lock);
-        while (!is_connected) {
-            switch_time_t start_wait = switch_time_now();
-            connected_cond.wait_for(cv_lock, websocketpp::lib::chrono::milliseconds(10)); // wait for 10 ms
-            if (medhub_globals->_debug) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "after connected_cond.wait_for: %ld ms/is_connected: %d \n",
-                                  (switch_time_now() - start_wait)/1000, is_connected);
-            }
+        switch_time_t start_wait = switch_time_now();
+        cond_latch.wait_for();
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s: after cond_latch.wait_for(): %ld ms\n",
+                              switch_core_session_get_uuid(session), (switch_time_now() - start_wait)/1000);
         }
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "after while (!is_connected): is_connected: %d \n", is_connected);
     }
 
     // auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
