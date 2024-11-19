@@ -1909,7 +1909,7 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
     }
 }
 
-// hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number> vars_playback_id=<playback_id>
+// hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
     if (zstr(cmd)) {
         stream->write_function(stream, "hub_uuid_play: parameter missing.\n");
@@ -1919,7 +1919,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
 
     switch_status_t status = SWITCH_STATUS_SUCCESS;
     switch_core_session_t *session4play = nullptr;
-    char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr, *_vars_playback_id = nullptr;
+    char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr;
 
     switch_memory_pool_t *pool;
     switch_core_new_memory_pool(&pool);
@@ -1962,10 +1962,6 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                 }
                 if (!strcasecmp(var, "content_id")) {
                     _content_id = val;
-                    continue;
-                }
-                if (!strcasecmp(var, "vars_playback_id")) {
-                    _vars_playback_id = val;
                     continue;
                 }
             }
@@ -2023,8 +2019,11 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             switch_core_session_rwunlock(session4play);
 
             if (can_play) {
-                const char *filename = switch_core_sprintf(pool, "{content_id=%s,vars_playback_id=%s,vars_start_timestamp=%ld}%s",
-                                                           _content_id, _vars_playback_id, switch_micro_time_now(), _file);
+                const char *vars = switch_core_sprintf(pool, "content_id=%s,vars_start_timestamp=%ld",
+                                                           _content_id, switch_micro_time_now());
+                const char *filename = switch_core_sprintf(pool, _file, vars);
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: %s\n",
+                                  ctx->sessionid, filename);
                 switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
             }
         }
