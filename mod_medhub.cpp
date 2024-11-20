@@ -1731,7 +1731,9 @@ static void clear_playing_content(const char *session_uuid, const char *stopped_
 }
 
 static void on_playback_stop(switch_event_t *event) {
-    // dump_event(event);
+    if (medhub_globals->_debug) {
+        dump_event(event);
+    }
     switch_event_header_t *hdr;
     const char *uuid, *playback_file_path, *offset, *status,
             *content_id = nullptr,
