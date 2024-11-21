@@ -102,6 +102,7 @@ typedef struct {
     const char *playback_file;
     bool cancel_on_speak;
     bool pause_on_speak;
+    int  playback_idx;
 } medhub_context_t;
 
 std::string get_thread_id(const std::thread::id &id) {
@@ -1590,13 +1591,9 @@ end:
 #endif
 }
 
-static void fire_report_ai_speak(const char *uuid,
-                                 const char *content_id,
-                                 const char *ccs_call_id,
-                                 const char *record_start_timestamp,
-                                 const char *playback_start_timestamp,
-                                 const char *playback_stop_timestamp,
-                                 const char *playback_ms) {
+static void fire_report_ai_speak(const char *uuid, const char *content_id, const char *ccs_call_id,
+                                 const char *record_start_timestamp, const char *playback_start_timestamp,
+                                 const char *playback_stop_timestamp, const char *playback_ms, const char *playback_idx) {
     switch_event_t *event = nullptr;
     if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
         switch_event_set_subclass_name(event, "znc_report_ai_speak");
@@ -1613,6 +1610,7 @@ static void fire_report_ai_speak(const char *uuid,
 
         switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Stop-Timestamp", playback_stop_timestamp);
         switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Play-Time-Ms", playback_ms);
+        switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Ai-Play-Idx", playback_idx);
         switch_event_fire(&event);
     }
 }
@@ -1741,7 +1739,8 @@ static void on_playback_stop(switch_event_t *event) {
             *record_start_timestamp = nullptr,
             *playback_start_timestamp = nullptr,
             *playback_stop_timestamp = nullptr,
-            *playback_ms = nullptr;
+            *playback_ms = nullptr,
+            *playback_idx = nullptr;
 
     hdr = switch_event_get_header_ptr(event, "Unique-ID");
     uuid = hdr->value;
@@ -1809,7 +1808,12 @@ static void on_playback_stop(switch_event_t *event) {
         if (hdr) {
             playback_start_timestamp = hdr->value;;
         }
-        fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp, playback_stop_timestamp, playback_ms);
+        hdr = switch_event_get_header_ptr(event, "playback_idx");
+        if (hdr) {
+            playback_idx = hdr->value;;
+        }
+        fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp,
+                             playback_stop_timestamp, playback_ms, playback_idx);
     }
 }
 
@@ -2012,6 +2016,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                 ctx->playback_file = switch_core_session_strdup(session4play, _file);
                 ctx->cancel_on_speak = cancel_on_speak;
                 ctx->pause_on_speak = pause_on_speak;
+                ctx->playback_idx++;
             }
 
             switch_mutex_unlock(ctx->mutex);
@@ -2021,8 +2026,8 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             switch_core_session_rwunlock(session4play);
 
             if (can_play) {
-                const char *vars = switch_core_sprintf(pool, "content_id=%s,vars_start_timestamp=%ld",
-                                                           _content_id, switch_micro_time_now());
+                const char *vars = switch_core_sprintf(pool, "content_id=%s,vars_start_timestamp=%ld,playback_idx=%d",
+                                                           _content_id, switch_micro_time_now(),ctx->playback_idx);
                 const char *filename = switch_core_sprintf(pool, _file, vars);
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: %s\n",
                                   ctx->sessionid, filename);
