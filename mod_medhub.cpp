@@ -435,7 +435,7 @@ public:
 
     // The close handler will signal that we should stop sending data
     void on_close(const websocketpp::connection_hdl &) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "%s: Connection closed, stopping data!\n",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub ws connection closed!\n",
                           _medhub_ctx->sessionid);
 
         {
@@ -867,7 +867,7 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
         const char *str_idle_timeout = switch_channel_get_variable(channel, "idle_timeout");
         if (str_idle_timeout) {
             idle_timeout_ms = switch_safe_atol(str_idle_timeout, 10 * 1000);
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle_timeout: [%ld] ms", idle_timeout_ms);
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle_timeout: [%ld] ms\n", idle_timeout_ms);
         }
 
         switch_core_session_rwunlock(ctx->session);
@@ -880,7 +880,7 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
     switch_mutex_unlock(ctx->mutex);
 
     if (is_answered && !_is_speaking && !_is_playing && (idle_duration_ms >= idle_timeout_ms)) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld ms >=: [%ld] ms", idle_duration_ms, idle_timeout_ms);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld ms >=: [%ld] ms\n", idle_duration_ms, idle_timeout_ms);
         switch_event_t *event = nullptr;
         if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
             const char *unique_id = switch_core_session_get_uuid(ctx->session);
@@ -892,12 +892,12 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
             }
             switch_core_session_rwunlock(ctx->session);
         } else {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_check_idle: session [%s] switch_core_session_read_lock failed",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_check_idle: session [%s] switch_core_session_read_lock failed\n",
                               switch_core_session_get_uuid(ctx->session));
         }
         // ctx->begin_idle_timestamp = switch_time_now();
     } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld ms",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld ms\n",
                           is_answered, _is_speaking, _is_playing, idle_duration_ms);
     }
 
@@ -1393,9 +1393,10 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
                 switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send audio failed: %s -> on channel: %s\n",
                                   ec.message().c_str(), switch_channel_get_name(channel));
-                ctx->client->stop();
-                delete ctx->client;
-                ctx->client = nullptr;
+                // not stop() or delete client instance 20241121 for debug, maming
+                // ctx->client->stop();
+                // delete ctx->client;
+                 // ctx->client = nullptr;
                 ret_val = false;
                 goto unlock;
             }
