@@ -2038,7 +2038,12 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                                       "hub_uuid_play: %s before switch_ivr_play_file: %s\n",
                                       switch_core_session_get_uuid(session4play), filename);
                     switch_file_handle_t fh = {0};
-                    switch_status_t status = switch_ivr_play_file(session4play, &fh, filename, nullptr);
+
+                    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(session4play)) {
+                        switch_status_t status = switch_ivr_play_file(session4play, &fh, filename, nullptr);
+                        switch_core_session_rwunlock(session4play);
+                    }
+
                     // switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
                     // switch_ivr_broadcast_in_thread(session4play, filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
