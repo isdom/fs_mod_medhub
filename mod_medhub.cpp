@@ -1927,6 +1927,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
     switch_status_t status = SWITCH_STATUS_SUCCESS;
     switch_core_session_t *session4play = nullptr;
     char *_file = nullptr, *_cancel_on_speak = nullptr, *_pause_on_speak = nullptr, *_content_id = nullptr;
+    int playback_idx = 0;
 
     switch_memory_pool_t *pool;
     switch_core_new_memory_pool(&pool);
@@ -2018,6 +2019,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                 ctx->cancel_on_speak = cancel_on_speak;
                 ctx->pause_on_speak = pause_on_speak;
                 ctx->playback_idx++;
+                playback_idx = ctx->playback_idx;
             }
 
             switch_mutex_unlock(ctx->mutex);
@@ -2028,28 +2030,31 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
 
             if (can_play) {
                 const char *vars = switch_core_sprintf(pool, "content_id=%s,vars_start_timestamp=%ld,playback_idx=%d",
-                                                           _content_id, switch_micro_time_now(),ctx->playback_idx);
+                                                           _content_id, switch_micro_time_now(), playback_idx);
                 const char *filename = switch_core_sprintf(pool, _file, vars);
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: %s\n",
-                                  ctx->sessionid, filename);
-
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: %s\n", argv[0], filename);
                 {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                                      "hub_uuid_play: %s before switch_core_session_read_lock/switch_ivr_play_file: %s\n",
-                                      switch_core_session_get_uuid(session4play), filename);
+                                      "hub_uuid_play: %s before switch_core_session_force_locate/switch_ivr_play_file: %s\n",
+                                      argv[0], filename);
                     switch_file_handle_t fh = {0};
 
                     switch_status_t status = SWITCH_STATUS_SUCCESS;
-                    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(session4play)) {
+                    session4play = switch_core_session_force_locate(argv[0]);
+                    if (session4play) {
                         status = switch_ivr_play_file(session4play, &fh, filename, nullptr);
                         switch_core_session_rwunlock(session4play);
-                    }
+                    } else {
+                        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                                          "hub_uuid_play: %s switch_ivr_play_file: %s switch_core_session_force_locate failed!\n",
+                                          argv[0], filename);
+
 
                     // switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
                     // switch_ivr_broadcast_in_thread(session4play, filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
                                       "hub_uuid_play: %s after switch_ivr_play_file: %s/switch_core_session_rwunlock, return: %d\n",
-                                      switch_core_session_get_uuid(session4play), filename, status);
+                                      argv[0], filename, status);
                 }
             }
         }
