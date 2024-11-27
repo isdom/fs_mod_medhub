@@ -1371,7 +1371,7 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
 static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t data_len) {
     bool  ret_val = false;
     // send audio to asr
-    // switch_mutex_lock(ctx->mutex);
+    switch_mutex_lock(ctx->mutex);
 
     if (ctx->client) {
         if (ctx->re_sampler) {
@@ -1416,7 +1416,7 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
     }
 
     unlock:
-    // switch_mutex_unlock(ctx->mutex);
+    switch_mutex_unlock(ctx->mutex);
     return ret_val;
 }
 
