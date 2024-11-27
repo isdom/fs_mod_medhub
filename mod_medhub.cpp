@@ -2048,6 +2048,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
                                           "hub_uuid_play: %s switch_ivr_play_file: %s switch_core_session_force_locate failed!\n",
                                           argv[0], filename);
+                    }
 
 
                     // switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
