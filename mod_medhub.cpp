@@ -385,22 +385,27 @@ public:
             };
 
             const std::string str_stopTranscription = json_stopTranscription.dump();
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop: send StopTranscription command, detail: %s\n",
-                              str_stopTranscription.c_str());
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] stop: send StopTranscription command, detail: %s\n",
+                              _medhub_ctx->sessionid, str_stopTranscription.c_str());
 
             websocketpp::lib::error_code ec;
             m_client.send(m_hdl, str_stopTranscription, websocketpp::frame::opcode::text, ec);
             if (ec) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send stop msg failed: %s\n",
-                                  ec.message().c_str());
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "[%s]: medhub send stop msg failed: %s\n",
+                                  _medhub_ctx->sessionid, ec.message().c_str());
             } else {
                 if (medhub_globals->_debug) {
-                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "medhub send stop msg success\n");
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "[%s]: medhub send stop msg success\n",
+                                      _medhub_ctx->sessionid);
                 }
             }
         }
 
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step1\n",
+                          _medhub_ctx->sessionid);
         m_client.stop_perpetual();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step2\n",
+                          _medhub_ctx->sessionid);
 //        void close(connection_hdl hdl, close::status::value const code,
 //                   std::string const & reason);
         // https://docs.websocketpp.org/faq.html
@@ -410,12 +415,20 @@ public:
         // For both, run websocketpp::endpoint::close or websocketpp::connection::close on all currently outstanding connections.
         //          This will initiate the WebSocket closing handshake for these connections
         if (is_connected()) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step3\n",
+                              _medhub_ctx->sessionid);
             m_client.close(m_hdl, websocketpp::close::status::normal, "");
         }
 
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step4\n",
+                          _medhub_ctx->sessionid);
         m_thread->join();
 
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step5\n",
+                          _medhub_ctx->sessionid);
         on_channel_closed(_medhub_ctx);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step6\n",
+                          _medhub_ctx->sessionid);
     }
 
     // The open handler will signal that we are ready to start sending data
@@ -843,7 +856,7 @@ void on_task_failed(medhub_context_t *ctx) {
  */
 void on_channel_closed(medhub_context_t *ctx) {
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "on_channel_closed: medhub\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: on_channel_closed: medhub\n", ctx->sessionid);
     }
     /*
     if (ctx->asr_callback) {
