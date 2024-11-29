@@ -1403,13 +1403,11 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
 
             if (ec) {
                 ctx->asr_stopped = 1;
-                switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send audio failed: %s -> on channel: %s\n",
-                                  ec.message().c_str(), switch_channel_get_name(channel));
-                // not stop() or delete client instance 20241121 for debug, maming
-                // ctx->client->stop();
-                // delete ctx->client;
-                 // ctx->client = nullptr;
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send audio failed: %s\n",
+                                  ctx->sessionid, ec.message().c_str());
+                ctx->client->stop();
+                delete ctx->client;
+                ctx->client = nullptr;
                 ret_val = false;
                 goto unlock;
             }
