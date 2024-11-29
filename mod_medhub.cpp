@@ -2045,10 +2045,11 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: %s\n", argv[0], filename);
                 {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                                      "hub_uuid_play: %s before switch_core_session_force_locate/switch_ivr_play_file: %s\n",
+                                      //"hub_uuid_play: %s before switch_core_session_force_locate/switch_ivr_play_file: %s\n",
+                                      "hub_uuid_play: %s before switch_ivr_broadcast: %s\n",
                                       argv[0], filename);
+#if 0
                     switch_file_handle_t fh = {0};
-
                     switch_status_t status = SWITCH_STATUS_SUCCESS;
                     session4play = switch_core_session_force_locate(argv[0]);
                     if (session4play) {
@@ -2059,13 +2060,15 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                                           "hub_uuid_play: %s switch_ivr_play_file: %s switch_core_session_force_locate failed!\n",
                                           argv[0], filename);
                     }
+#else
 
-
-                    // switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+                    switch_ivr_broadcast(argv[0], filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+#endif
                     // switch_ivr_broadcast_in_thread(session4play, filename, (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
-                                      "hub_uuid_play: %s after switch_ivr_play_file: %s/switch_core_session_rwunlock, return: %d\n",
-                                      argv[0], filename, status);
+                                      //"hub_uuid_play: %s after switch_ivr_play_file: %s/switch_core_session_rwunlock, return: %d\n",
+                                      "hub_uuid_play: %s after switch_ivr_broadcast %s\n",
+                                      argv[0], filename);
                 }
             }
         }
