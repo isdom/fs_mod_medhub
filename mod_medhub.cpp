@@ -1438,24 +1438,24 @@ static void stop_medhub(medhub_context_t *ctx) {
     switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
     if (ctx->client) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "try to stop medhub on channel: %s\n",
-                              switch_channel_get_name(channel));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: try to stop medhub on channel\n",
+                              ctx->sessionid);
         }
         ctx->client->stop();
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "after stop medhub on channel: %s\n",
-                              switch_channel_get_name(channel));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: after stop medhub on channel\n",
+                              ctx->sessionid);
         }
         delete ctx->client;
         ctx->client = nullptr;
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "stop medhub and client is released on channel: %s\n",
-                              switch_channel_get_name(channel));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: stop medhub and client is released on channel\n",
+                              ctx->sessionid);
         }
     } else {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "medhub has already stopped and released on channel:%s\n",
-                              switch_channel_get_name(channel));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: medhub has already stopped and released on channel\n",
+                              ctx->sessionid);
         }
     }
     switch_mutex_unlock(ctx->mutex);
@@ -1466,20 +1466,20 @@ static void destroy_medhub(medhub_context_t *ctx) {
     switch_channel_t *channel = switch_core_session_get_channel(session);
     auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
     if (!medhub_ctx) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "destroy_medhub: [%s]'s medhub_context is nullptr, destroy_medhub called before",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "destroy_medhub: [%s]'s medhub_context is nullptr, destroy_medhub called before\n",
                           switch_core_session_get_uuid(session));
         return;
     }
     switch_channel_set_private(channel, MEDHUB_CTX_NAME, nullptr); // clear channel's private data for medhub_context
 
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(ctx->session), SWITCH_LOG_NOTICE, "destroy_medhub: release all resource for session -> on channel: %s\n",
-                          switch_core_session_get_uuid(session));
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: release all resource for this session\n",
+                          medhub_ctx->sessionid);
     }
     stop_medhub(ctx);
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "destroy_medhub: stop_medhub -> channel: %s\n",
-                          switch_core_session_get_uuid(session));
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: stop_medhub\n",
+                          medhub_ctx->sessionid);
     }
 
     // decrement medhub concurrent count
@@ -1488,28 +1488,28 @@ static void destroy_medhub(medhub_context_t *ctx) {
     if (ctx->re_sampler) {
         switch_resample_destroy(&ctx->re_sampler);
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "destroy_medhub: switch_resample_destroy -> on channel: %s\n",
-                              switch_core_session_get_uuid(session));
+            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: switch_resample_destroy\n",
+                              medhub_ctx->sessionid);
         }
     }
     switch_mutex_destroy(ctx->mutex);
     if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "destroy_medhub: switch_mutex_destroy -> on channel: %s\n",
-                          switch_core_session_get_uuid(session));
+        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: switch_mutex_destroy\n",
+                          medhub_ctx->sessionid);
     }
 }
 
 static switch_status_t medhub_cleanup_on_channel_destroy(switch_core_session_t *session) {
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
-                          "medhub_cleanup_on_channel_destroy: try to cleanup medhub_context on session [%s] destroy",
+                          "medhub_cleanup_on_channel_destroy: try to cleanup medhub_context on session [%s] destroy\n",
                           switch_core_session_get_uuid(session));
     }
     switch_core_session_write_lock(session);
     switch_channel_t *channel = switch_core_session_get_channel(session);
     auto *medhub_ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
     if (!medhub_ctx) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "medhub_cleanup_on_channel_destroy: [%s]'s medhub_context is nullptr",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "medhub_cleanup_on_channel_destroy: [%s]'s medhub_context is nullptr\n",
                           switch_core_session_get_uuid(session));
         goto unlock;
     }
