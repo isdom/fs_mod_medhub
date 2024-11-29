@@ -1435,7 +1435,6 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
 
 static void stop_medhub(medhub_context_t *ctx) {
     switch_mutex_lock(ctx->mutex);
-    switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
     if (ctx->client) {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: try to stop medhub on channel\n",
