@@ -401,11 +401,11 @@ public:
             }
         }
 
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step1\n",
-                          _medhub_ctx->sessionid);
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step1\n",
+        //                  _medhub_ctx->sessionid);
         m_client.stop_perpetual();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step2\n",
-                          _medhub_ctx->sessionid);
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step2\n",
+        //                  _medhub_ctx->sessionid);
 //        void close(connection_hdl hdl, close::status::value const code,
 //                   std::string const & reason);
         // https://docs.websocketpp.org/faq.html
@@ -415,20 +415,20 @@ public:
         // For both, run websocketpp::endpoint::close or websocketpp::connection::close on all currently outstanding connections.
         //          This will initiate the WebSocket closing handshake for these connections
         if (is_connected()) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step3\n",
-                              _medhub_ctx->sessionid);
+            // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step3\n",
+            //                  _medhub_ctx->sessionid);
             m_client.close(m_hdl, websocketpp::close::status::normal, "");
         }
 
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step4\n",
-                          _medhub_ctx->sessionid);
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step4\n",
+        //                  _medhub_ctx->sessionid);
         m_thread->join();
 
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step5\n",
-                          _medhub_ctx->sessionid);
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step5\n",
+        //                  _medhub_ctx->sessionid);
         on_channel_closed(_medhub_ctx);
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step6\n",
-                          _medhub_ctx->sessionid);
+        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step6\n",
+        //                  _medhub_ctx->sessionid);
     }
 
     // The open handler will signal that we are ready to start sending data
