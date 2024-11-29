@@ -239,7 +239,7 @@ public:
     }
 
     bool is_connected() {
-        return m_open;
+        return m_open && !m_done;
     }
 
     void on_message(websocketpp::connection_hdl hdl, message_ptr msg) {
