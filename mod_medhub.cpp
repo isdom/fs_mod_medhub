@@ -5,6 +5,9 @@
 #define ENABLE_WSS 0
 #define ENABLE_MEDHUB_PLAYBACK 0
 
+// max resp timeout: 5 seconds
+const switch_time_t MAX_RESP_TIMEOUT = 5000 * 1000L;
+
 #include <websocketpp/client.hpp>
 #include <websocketpp/common/thread.hpp>
 #include <websocketpp/config/asio_client.hpp>
@@ -347,6 +350,8 @@ public:
                 //           }}
         };
 
+        json_startTranscription.merge_patch(_init_args);
+
         const std::string str_startTranscription = json_startTranscription.dump();
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "startTranscription: send StartTranscription command, detail: %s\n",
                           str_startTranscription.c_str());
@@ -473,6 +478,10 @@ public:
         m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
+    void set_args(const nlohmann::json &args) {
+        _init_args = args;
+    }
+
 #if ENABLE_MEDHUB_PLAYBACK
     void playback(const char *filename, const int stream_id, const int samples) {
         nlohmann::json json_playback = {
@@ -584,6 +593,7 @@ public:
     websocketpp::client<T> m_client;
     websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
 
+
 private:
 
     medhub_context_t *_medhub_ctx;
@@ -591,36 +601,52 @@ private:
     websocketpp::lib::mutex m_lock;
     bool m_open;
     bool m_done;
+    nlohmann::json _init_args;
 
     on_connected_t _on_connected;
 };
 
 class condition_latch_t {
     typedef websocketpp::lib::unique_lock<websocketpp::lib::mutex> cv_lock_t;
-    typedef websocketpp::lib::lock_guard<websocketpp::lib::mutex> scoped_lock_t;
 
 public:
-    void mark_done() {
-        {
-            scoped_lock_t guard(_lock);
-            _is_done = true;
-        }
-        _done_cond.notify_one();
+    condition_latch_t(): _is_done(false), _start_tm(switch_time_now()) {
     }
 
-    void wait_for() {
+    void reset() {
+        _is_done.store(false);
+        _start_tm = switch_time_now();
+    }
+
+    void mark_done() {
+        _is_done.store(true);
+        _done_cond.notify_all();
+    }
+
+    bool wait_for(const switch_time_t timeout) {
+        const switch_time_t start_tm = switch_time_now();
         cv_lock_t cv_lock(_lock);
-        while (!_is_done) {
-            _done_cond.wait_for(cv_lock, websocketpp::lib::chrono::milliseconds(10)); // wait for 10 ms
+        while (!is_done()) {
+            if (switch_time_now() - start_tm <= timeout) {
+                _done_cond.wait_for(cv_lock, websocketpp::lib::chrono::milliseconds(10)); // wait for 10 ms
+            } else {
+                return false;
+            }
         }
+        return true;
     }
 
     bool is_done() const {
-        return _is_done;
+        return _is_done.load();
+    }
+
+    switch_time_t from_start() const {
+        return switch_time_now() - _start_tm;
     }
 
 private:
-    bool _is_done = false;
+    std::atomic<bool> _is_done;
+    switch_time_t _start_tm;
     websocketpp::lib::mutex _lock;
     websocketpp::lib::condition_variable _done_cond;
 };
@@ -1273,6 +1299,7 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
     }
 
     const char *_hub_url = nullptr;
+    nlohmann::json init_args;
 
     char *my_cmd = switch_core_session_strdup(session, cmd);
 
@@ -1295,6 +1322,7 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
                 if (medhub_globals->_debug) {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "init_medhub: process arg[%s = %s]\n", var, val);
                 }
+                init_args["payload"][var] = val;
                 if (!strcasecmp(var, "url")) {
                     _hub_url = val;
                     continue;
@@ -1319,11 +1347,14 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
     });
 
     if (ctx) {
-        switch_time_t start_wait = switch_time_now();
-        cond_latch.wait_for();
+        if (!cond_latch.wait_for(MAX_RESP_TIMEOUT)) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: connect_medhub resp timeout: %ld ms, init_medhub failed!\n",
+                              ctx->sessionid, cond_latch.from_start()/1000L);
+            return nullptr;
+        }
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "%s: after cond_latch.wait_for(): %ld ms/is_done: %d\n",
-                              switch_core_session_get_uuid(session), (switch_time_now() - start_wait)/1000, cond_latch.is_done());
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: after cond_latch.wait_for(): %ld ms/is_done: %d\n",
+                              ctx->sessionid, cond_latch.from_start()/1000L, cond_latch.is_done());
         }
     }
 
@@ -1354,6 +1385,7 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
                       read_impl->samples_per_packet, read_impl->samples_per_second, read_impl->actual_samples_per_second,
                       read_impl->microseconds_per_packet);
 
+    ctx->client->set_args(init_args);
     return ctx;
 }
 
