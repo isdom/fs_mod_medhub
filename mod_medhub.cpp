@@ -13,6 +13,7 @@ const switch_time_t MAX_RESP_TIMEOUT = 5000 * 1000L;
 #include <websocketpp/config/asio_client.hpp>
 
 #include "nlohmann/json.hpp"
+#include "cppcodec/base64_rfc4648.hpp"
 
 typedef struct {
     bool _debug;
@@ -2176,7 +2177,9 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             bool can_play = true;
             bool cancel_on_speak = _cancel_on_speak && atoi(_cancel_on_speak);
             bool pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
-            std::string file_decoded = base64_decode(_file);
+            std::vector<uint8_t> vec = cppcodec::base64_rfc4648::decode(std::string(_file));
+            std::string file_decoded(reinterpret_cast<const char*>(vec.data()), vec.size());
+            // std::string file_decoded = base64_decode(_file);
 
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: [%s] base64 decode => %s\n", argv[0], _file, file_decoded.c_str());
 

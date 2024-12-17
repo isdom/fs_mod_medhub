@@ -8,5 +8,6 @@ include_directories(/usr/local/freeswitch/include/freeswitch)
 include_directories(third_party/websocket)
 include_directories(third_party/asio/asio/include)
 include_directories(third_party/json/include)
+include_directories(third_party/cppcodec)
 
 ADD_LIBRARY (mod_medhub SHARED mod_medhub.cpp)
