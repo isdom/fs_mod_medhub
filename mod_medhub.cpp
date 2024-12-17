@@ -2114,7 +2114,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             bool pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
             std::string file_decoded = base64_decode(_file);
 
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: base64 decode => %s\n", argv[0], file_decoded.c_str());
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: [%s] base64 decode => %s\n", argv[0], _file, file_decoded.c_str());
 
             switch_mutex_lock(ctx->mutex);
             if (is_playing(ctx)) {
