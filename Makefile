@@ -11,7 +11,7 @@ CFLAGS += -shared -fPIC -O2 -Wall
 SER_SRCS=mod_medhub.cpp
 
 SDK_LIBS=-lpthread -ldl -lanl -D_GLIBCXX_USE_CXX11_ABI=0
-SDK_INCLUDE=-I./third_party/websocket -I./third_party/asio/asio/include -I./third_party/json/include
+SDK_INCLUDE=-I./third_party/websocket -I./third_party/asio/asio/include -I./third_party/json/include -I./third_party/cppcodec
 
 FREESWITCH_LIBS=-L/usr/local/freeswitch/lib -lfreeswitch
 FREESWITCH_INCLUDE=-I/usr/local/freeswitch/include/freeswitch
