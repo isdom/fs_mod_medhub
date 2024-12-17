@@ -1958,6 +1958,70 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
     }
 }
 
+static const std::string base64_chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+// Base64 解码表
+static inline bool is_base64(unsigned char c) {
+    return (isalnum(c) || (c == '+') || (c == '/'));
+}
+
+static inline unsigned char base64_decode(unsigned char c) {
+    if (c >= 'A' && c <= 'Z')
+        return c - 'A';
+    else if (c >= 'a' && c <= 'z')
+        return c - 'a' + 26;
+    else if (c >= '0' && c <= '9')
+        return c - '0' + 52;
+    else if (c == '+')
+        return 62;
+    else if (c == '/')
+        return 63;
+    else
+        throw std::invalid_argument("Invalid character in Base64 input");
+}
+
+std::string base64_decode(const std::string& encoded_str) {
+    int num_padding_chars = 0;
+
+    if (encoded_str.empty() || !is_base64(encoded_str.back()))
+        throw std::invalid_argument("Invalid Base64 input");
+
+    if (encoded_str.back() == '=')
+        ++num_padding_chars;
+    if (encoded_str.size() > 1 && encoded_str[encoded_str.size() - 2] == '=')
+        ++num_padding_chars;
+
+    size_t num_data_chars = encoded_str.size() - num_padding_chars;
+    if (num_data_chars % 4 != 0)
+        throw std::invalid_argument("Invalid Base64 input");
+
+    size_t num_bytes = num_data_chars / 4 * 3;
+    std::vector<unsigned char> decoded_bytes(num_bytes);
+
+    for (size_t i = 0, j = 0; i < num_data_chars; i += 4, ++j) {
+        unsigned int sextet_a = base64_decode(encoded_str[i]);
+        unsigned int sextet_b = base64_decode(encoded_str[i + 1]);
+        unsigned int sextet_c = base64_decode(encoded_str[i + 2]);
+        unsigned int sextet_d = base64_decode(encoded_str[i + 3]);
+
+        unsigned char byte1 = (sextet_a << 2) | ((sextet_b & 0x30) >> 4);
+        unsigned char byte2 = ((sextet_b & 0x0f) << 4) | ((sextet_c & 0x3c) >> 2);
+        unsigned char byte3 = ((sextet_c & 0x03) << 6) | sextet_d;
+
+        decoded_bytes[j] = byte1;
+        if (j + 1 < num_bytes)
+            decoded_bytes[j + 1] = byte2;
+        if (j + 2 < num_bytes)
+            decoded_bytes[j + 2] = byte3;
+    }
+
+    return std::string(decoded_bytes.begin(), decoded_bytes.end());
+}
+
+#if 0
 std::string base64_chars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz"
@@ -2023,7 +2087,7 @@ std::string base64_decode(const std::string& data) {
     }
     return ret;
 }
-
+#endif
 
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
