@@ -1958,6 +1958,73 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
     }
 }
 
+std::string base64_chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+
+int mod_table[] = {0, 2, 1};
+
+std::string base64_encode(const std::string& data) {
+    std::string ret;
+    int val = 0, valb = -6;
+    for (unsigned char c : data) {
+        val = (val << 8) + c;
+        valb += 8;
+        while (valb >= 0) {
+            ret.push_back(base64_chars[(val >> valb) & 0x3F]);
+            valb -= 6;
+        }
+    }
+    if (valb > -6) {
+        ret.push_back(base64_chars[((val << 8) >> (valb + 8)) & 0x3F]);
+    }
+    while (ret.size() % 4) {
+        ret.push_back('=');
+    }
+    return ret;
+}
+
+std::string base64_decode(const std::string& data) {
+    std::string ret;
+    std::vector<int> tmp;
+    int val = 0, valb = -8;
+    for (unsigned char c : data) {
+        if (c == '=') {
+            break;
+        }
+
+        if ((c >= 'A') && (c <= 'Z')) {
+            val = (val << 6) + (c - 'A');
+        } else if ((c >= 'a') && (c <= 'z')) {
+            val = (val << 6) + (c - 'a') + 26;
+        } else if ((c >= '0') && (c <= '9')) {
+            val = (val << 6) + (c - '0') + 52;
+        } else if (c == '+') {
+            val = (val << 6) + 62;
+        } else if (c == '/') {
+            val = (val << 6) + 63;
+        } else {
+            throw std::runtime_error("Invalid character in base64 string");
+        }
+
+        valb += 6;
+        if (valb >= 0) {
+            tmp.push_back((char) ((val >> valb) & 0xFF));
+            if (valb >= 8) {
+                valb -= 8;
+                ret.push_back(tmp.back());
+                tmp.pop_back();
+            }
+        }
+    }
+    for (int i = 0; i < tmp.size(); i++) {
+        ret.push_back(tmp[i]);
+    }
+    return ret;
+}
+
+
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
     if (zstr(cmd)) {
@@ -2045,6 +2112,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             bool can_play = true;
             bool cancel_on_speak = _cancel_on_speak && atoi(_cancel_on_speak);
             bool pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
+            std::string file_decoded = base64_decode(_file);
 
             switch_mutex_lock(ctx->mutex);
             if (is_playing(ctx)) {
@@ -2057,7 +2125,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
 
             if (can_play) {
                 ctx->content_id = _content_id ? switch_core_session_strdup(session4play, _content_id) : nullptr;
-                ctx->playback_file = switch_core_session_strdup(session4play, _file);
+                ctx->playback_file = switch_core_session_strdup(session4play, file_decoded.c_str());
                 ctx->cancel_on_speak = cancel_on_speak;
                 ctx->pause_on_speak = pause_on_speak;
                 ctx->playback_idx++;
@@ -2073,7 +2141,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             if (can_play) {
                 const char *vars = switch_core_sprintf(pool, "content_id=%s,vars_start_timestamp=%ld,playback_idx=%d",
                                                            _content_id, switch_micro_time_now(), playback_idx);
-                const char *filename = switch_core_sprintf(pool, _file, vars);
+                const char *filename = switch_core_sprintf(pool, file_decoded.c_str(), vars);
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: %s\n", argv[0], filename);
                 {
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
