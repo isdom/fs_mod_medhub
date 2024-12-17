@@ -1959,137 +1959,6 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
     }
 }
 
-static const std::string base64_chars =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789+/";
-
-// Base64 解码表
-static inline bool is_base64(unsigned char c) {
-    return (isalnum(c) || (c == '+') || (c == '/'));
-}
-
-static inline unsigned char base64_decode(unsigned char c) {
-    if (c >= 'A' && c <= 'Z')
-        return c - 'A';
-    else if (c >= 'a' && c <= 'z')
-        return c - 'a' + 26;
-    else if (c >= '0' && c <= '9')
-        return c - '0' + 52;
-    else if (c == '+')
-        return 62;
-    else if (c == '/')
-        return 63;
-    else
-        throw std::invalid_argument("Invalid character in Base64 input");
-}
-
-std::string base64_decode(const std::string& encoded_str) {
-    int num_padding_chars = 0;
-
-    if (encoded_str.empty() || !is_base64(encoded_str.back()))
-        throw std::invalid_argument("Invalid Base64 input");
-
-    if (encoded_str.back() == '=')
-        ++num_padding_chars;
-    if (encoded_str.size() > 1 && encoded_str[encoded_str.size() - 2] == '=')
-        ++num_padding_chars;
-
-    size_t num_data_chars = encoded_str.size() - num_padding_chars;
-    if (num_data_chars % 4 != 0)
-        throw std::invalid_argument("Invalid Base64 input");
-
-    size_t num_bytes = num_data_chars / 4 * 3;
-    std::vector<unsigned char> decoded_bytes(num_bytes);
-
-    for (size_t i = 0, j = 0; i < num_data_chars; i += 4, ++j) {
-        unsigned int sextet_a = base64_decode(encoded_str[i]);
-        unsigned int sextet_b = base64_decode(encoded_str[i + 1]);
-        unsigned int sextet_c = base64_decode(encoded_str[i + 2]);
-        unsigned int sextet_d = base64_decode(encoded_str[i + 3]);
-
-        unsigned char byte1 = (sextet_a << 2) | ((sextet_b & 0x30) >> 4);
-        unsigned char byte2 = ((sextet_b & 0x0f) << 4) | ((sextet_c & 0x3c) >> 2);
-        unsigned char byte3 = ((sextet_c & 0x03) << 6) | sextet_d;
-
-        decoded_bytes[j] = byte1;
-        if (j + 1 < num_bytes)
-            decoded_bytes[j + 1] = byte2;
-        if (j + 2 < num_bytes)
-            decoded_bytes[j + 2] = byte3;
-    }
-
-    return std::string(decoded_bytes.begin(), decoded_bytes.end());
-}
-
-#if 0
-std::string base64_chars =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        "abcdefghijklmnopqrstuvwxyz"
-        "0123456789+/";
-
-int mod_table[] = {0, 2, 1};
-
-std::string base64_encode(const std::string& data) {
-    std::string ret;
-    int val = 0, valb = -6;
-    for (unsigned char c : data) {
-        val = (val << 8) + c;
-        valb += 8;
-        while (valb >= 0) {
-            ret.push_back(base64_chars[(val >> valb) & 0x3F]);
-            valb -= 6;
-        }
-    }
-    if (valb > -6) {
-        ret.push_back(base64_chars[((val << 8) >> (valb + 8)) & 0x3F]);
-    }
-    while (ret.size() % 4) {
-        ret.push_back('=');
-    }
-    return ret;
-}
-
-std::string base64_decode(const std::string& data) {
-    std::string ret;
-    std::vector<int> tmp;
-    int val = 0, valb = -8;
-    for (unsigned char c : data) {
-        if (c == '=') {
-            break;
-        }
-
-        if ((c >= 'A') && (c <= 'Z')) {
-            val = (val << 6) + (c - 'A');
-        } else if ((c >= 'a') && (c <= 'z')) {
-            val = (val << 6) + (c - 'a') + 26;
-        } else if ((c >= '0') && (c <= '9')) {
-            val = (val << 6) + (c - '0') + 52;
-        } else if (c == '+') {
-            val = (val << 6) + 62;
-        } else if (c == '/') {
-            val = (val << 6) + 63;
-        } else {
-            throw std::runtime_error("Invalid character in base64 string");
-        }
-
-        valb += 6;
-        if (valb >= 0) {
-            tmp.push_back((char) ((val >> valb) & 0xFF));
-            if (valb >= 8) {
-                valb -= 8;
-                ret.push_back(tmp.back());
-                tmp.pop_back();
-            }
-        }
-    }
-    for (int i = 0; i < tmp.size(); i++) {
-        ret.push_back(tmp[i]);
-    }
-    return ret;
-}
-#endif
-
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
 SWITCH_STANDARD_API(hub_uuid_play_function) {
     if (zstr(cmd)) {
@@ -2179,9 +2048,12 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
             bool pause_on_speak = _pause_on_speak && atoi(_pause_on_speak);
             std::vector<uint8_t> vec = cppcodec::base64_rfc4648::decode(std::string(_file));
             std::string file_decoded(reinterpret_cast<const char*>(vec.data()), vec.size());
-            // std::string file_decoded = base64_decode(_file);
 
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] hub_uuid_play: [%s] base64 decode => %s\n", argv[0], _file, file_decoded.c_str());
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                                  "[%s] hub_uuid_play: [%s] base64 decode => %s\n", argv[0], _file,
+                                  file_decoded.c_str());
+            }
 
             switch_mutex_lock(ctx->mutex);
             if (is_playing(ctx)) {
