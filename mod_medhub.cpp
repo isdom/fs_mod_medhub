@@ -40,6 +40,7 @@ typedef struct {
     double     confidence;
     const char *sentence;
     bool        is_playing;
+    int32_t     speaking_duration;
 } asr_sentence_result_t;
 
 typedef void (*on_asr_started_func_t) (void *);
@@ -171,6 +172,7 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json);
 static bool stop_current_playing_for(switch_core_session_t *session);
 static bool pause_current_playing_for(switch_core_session_t *session);
 static bool resume_current_playing_for(switch_core_session_t *session);
+static int32_t current_playing_duration(switch_core_session_t *session);
 
 static bool is_speaking(medhub_context_t *ctx);
 static bool is_playing(medhub_context_t *ctx);
@@ -788,7 +790,8 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
             hub_event["payload"]["time"],
             hub_event["payload"]["confidence"],
             result.c_str(),
-            is_playing(ctx)
+            is_playing(ctx),
+            current_playing_duration(ctx->session)
     };
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_sentence_end: medhub\n");
@@ -834,7 +837,9 @@ void on_transcription_result_changed(medhub_context_t *ctx, const nlohmann::json
                 -1,
                 -1,
                 0.0,
-                result.c_str()
+                result.c_str(),
+                false,
+                0
         };
         ctx->asr_callback->on_asr_result_changed_func(ctx->asr_callback->asr_caller, &asr_sentence_result);
     } else {
@@ -1957,6 +1962,25 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
                           switch_core_session_get_uuid(session), status);
         return false;
     }
+}
+
+static int32_t current_playing_duration(switch_core_session_t *session) {
+    // https://github.com/signalwire/freeswitch/blob/ec25d5df77c2293daa220640cef73548cc816217/src/switch_ivr_play_say.c#L2014
+    switch_file_handle_t *fhp = nullptr;
+    int32_t playing_duration = 0;
+    const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
+    if (SWITCH_STATUS_SUCCESS == status) {
+        if (fhp->native_rate >= 1000) {
+            playing_duration = (int32_t)(fhp->samples_in / (fhp->native_rate / 1000));
+        }
+
+        switch_ivr_release_file_handle(session, &fhp);
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+                          "current_playing_duration: session [%s] failed for switch_ivr_get_file_handle return %d\n",
+                          switch_core_session_get_uuid(session), status);
+    }
+    return playing_duration;
 }
 
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
