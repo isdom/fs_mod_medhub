@@ -108,6 +108,7 @@ typedef struct {
     bool cancel_on_speak;
     bool pause_on_speak;
     int  playback_idx;
+    bool is_paused;
 } medhub_context_t;
 
 std::string get_thread_id(const std::thread::id &id) {
@@ -170,12 +171,13 @@ void on_channel_closed(medhub_context_t *ctx);
 static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json);
 
 static bool stop_current_playing_for(switch_core_session_t *session);
-static bool pause_current_playing_for(switch_core_session_t *session);
-static bool resume_current_playing_for(switch_core_session_t *session);
+static bool pause_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session);
+static bool resume_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session);
 static int32_t current_playing_duration(switch_core_session_t *session);
 
 static bool is_speaking(medhub_context_t *ctx);
 static bool is_playing(medhub_context_t *ctx);
+static bool is_paused(medhub_context_t *ctx);
 
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event);
@@ -730,6 +732,7 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
         }
+        /* disable pause_on_speak for 1227
         else if (ctx->pause_on_speak) {
             pause_current_playing_for(ctx->session);
             if (medhub_globals->_debug) {
@@ -738,7 +741,7 @@ void on_sentence_begin(medhub_context_t *ctx, const nlohmann::json &hub_event) {
                                   "on_sentence_begin: thread[%s] pause playing for pause_on_speak, session [%s]\n",
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
-        }
+        }*/
     }
     switch_mutex_unlock(ctx->mutex);
 }
@@ -767,8 +770,9 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     switch_mutex_lock(ctx->mutex);
     ctx->asr_current_sentence_idx = 0; // means user speak ended
     if (ctx->content_id) {
+        /* disable pause_on_speak for 1227
         if (ctx->pause_on_speak) {
-            resume_current_playing_for(ctx->session);
+            resume_current_playing_for(ctx, ctx->session);
             if (medhub_globals->_debug) {
                 std::string id_str = get_thread_id(std::this_thread::get_id());
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
@@ -776,6 +780,7 @@ void on_sentence_end(medhub_context_t *ctx, const nlohmann::json &hub_event) {
                                   id_str.c_str(), switch_core_session_get_uuid(ctx->session));
             }
         }
+         */
     }
     if (!is_playing(ctx)) {
         // neither is_playing(...) nor is_speaking(...) means idle
@@ -827,6 +832,15 @@ void on_transcription_result_changed(medhub_context_t *ctx, const nlohmann::json
     std::string result = hub_event["payload"]["result"];
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "on_transcription_result_changed: medhub\n");
+    }
+    if (is_playing(ctx) && !is_paused(ctx)) {
+        pause_current_playing_for(ctx, ctx->session);
+        if (medhub_globals->_debug) {
+            std::string id_str = get_thread_id(std::this_thread::get_id());
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                              "[%s]: on_transcription_result_changed: thread[%s] pause playing for result_changed\n",
+                              ctx->sessionid, id_str.c_str());
+        }
     }
     if (ctx->asr_callback) {
         if (medhub_globals->_debug) {
@@ -1764,6 +1778,7 @@ static void clear_playing_content(const char *session_uuid, const char *stopped_
         }
         ctx->content_id = nullptr;
         ctx->playback_file = nullptr;
+        ctx->is_paused = false;
         if (!is_speaking(ctx)) {
             // neither is_playing(...) nor is_speaking(...) means idle
             update_idle_timestamp(ctx);
@@ -1909,6 +1924,10 @@ static bool is_playing(medhub_context_t *ctx) {
     return ctx->content_id != nullptr;
 }
 
+static bool is_paused(medhub_context_t *ctx) {
+    return ctx->is_paused;
+}
+
 static bool stop_current_playing_for(switch_core_session_t *session) {
     // ref: https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr_play_say.c#L1675
     // switch_channel_set_flag_value(switch_core_session_get_channel(session), CF_BREAK, 2);
@@ -1926,7 +1945,7 @@ static bool stop_current_playing_for(switch_core_session_t *session) {
     }
 }
 
-static bool pause_current_playing_for(switch_core_session_t *session) {
+static bool pause_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session) {
     // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
@@ -1934,6 +1953,7 @@ static bool pause_current_playing_for(switch_core_session_t *session) {
         if (!switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
             switch_set_flag_locked(fhp, SWITCH_FILE_PAUSE);
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
+            ctx->is_paused = true;
         }
         switch_ivr_release_file_handle(session, &fhp);
         return true;
@@ -1945,7 +1965,7 @@ static bool pause_current_playing_for(switch_core_session_t *session) {
     }
 }
 
-static bool resume_current_playing_for(switch_core_session_t *session) {
+static bool resume_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session) {
     // https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr.c#L4106
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
@@ -1953,6 +1973,7 @@ static bool resume_current_playing_for(switch_core_session_t *session) {
         if (switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
             switch_clear_flag_locked(fhp, SWITCH_FILE_PAUSE);
             switch_core_file_command(fhp, SCFC_PAUSE_READ);
+            ctx->is_paused = false;
         }
         switch_ivr_release_file_handle(session, &fhp);
         return true;
@@ -1981,6 +2002,71 @@ static int32_t current_playing_duration(switch_core_session_t *session) {
                           switch_core_session_get_uuid(session), status);
     }
     return playing_duration;
+}
+
+SWITCH_STANDARD_API(hub_uuid_resume_play_function) {
+    if (zstr(cmd)) {
+        stream->write_function(stream, "hub_uuid_resume_play: parameter missing.\n");
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_resume_play: parameter missing.\n");
+        return SWITCH_STATUS_SUCCESS;
+    }
+
+    switch_status_t status = SWITCH_STATUS_SUCCESS;
+    switch_core_session_t *session4play = nullptr;
+
+    switch_memory_pool_t *pool;
+    switch_core_new_memory_pool(&pool);
+    char *my_cmd = switch_core_strdup(pool, cmd);
+
+    char *argv[MAX_API_ARGC];
+    memset(argv, 0, sizeof(char *) * MAX_API_ARGC);
+
+    int argc = switch_split(my_cmd, ' ', argv);
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "hub_uuid_resume_play: cmd[%s], argc[%d]\n", my_cmd, argc);
+    }
+
+    if (argc < 1) {
+        stream->write_function(stream, "uuid is required.\n");
+        switch_goto_status(SWITCH_STATUS_SUCCESS, end);
+    }
+
+    session4play = switch_core_session_force_locate(argv[0]);
+    if (!session4play) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_resume_play failed, can't found session by %s\n",
+                          argv[0]);
+    } else {
+        switch_channel_t *channel = switch_core_session_get_channel(session4play);
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "hub_uuid_resume_play:%s\n", switch_core_session_get_uuid(session4play));
+        }
+
+        auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
+        if (!ctx) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "hub_uuid_resume_play failed, can't found medhub ctx by %s\n",
+                              switch_core_session_get_uuid(session4play));
+            // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+            //  We meet : ... Locked, Waiting on external entities
+            switch_core_session_rwunlock(session4play);
+        }
+        else {
+
+            switch_mutex_lock(ctx->mutex);
+            if (is_playing(ctx) && is_paused(ctx)) {
+                resume_current_playing_for(ctx, ctx->session);
+            }
+
+            switch_mutex_unlock(ctx->mutex);
+
+            // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+            //  We meet : ... Locked, Waiting on external entities
+            switch_core_session_rwunlock(session4play);
+        }
+    }
+
+    end:
+    switch_core_destroy_memory_pool(&pool);
+    return status;
 }
 
 // hub_uuid_play <uuid> file=<filename> cancel_on_speak=[1|0] pause_on_speak=[1|0] content_id=<number>
@@ -2093,6 +2179,7 @@ SWITCH_STANDARD_API(hub_uuid_play_function) {
                 ctx->playback_file = switch_core_session_strdup(session4play, file_decoded.c_str());
                 ctx->cancel_on_speak = cancel_on_speak;
                 ctx->pause_on_speak = pause_on_speak;
+                ctx->is_paused = false;
                 ctx->playback_idx++;
                 playback_idx = ctx->playback_idx;
             }
@@ -2439,6 +2526,12 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_medhub_load) {
                    "hub_uuid_play",
                    "hub_uuid_play api",
                    hub_uuid_play_function,
+                   "<cmd><args>");
+
+    SWITCH_ADD_API(api_interface,
+                   "hub_uuid_resume_play",
+                   "hub_uuid_resume_play api",
+                   hub_uuid_resume_play_function,
                    "<cmd><args>");
 
 #if ENABLE_MEDHUB_PLAYBACK
