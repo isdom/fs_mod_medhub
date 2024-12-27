@@ -2051,16 +2051,40 @@ SWITCH_STANDARD_API(hub_uuid_resume_play_function) {
         }
         else {
 
+            // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+            //  We meet : ... Locked, Waiting on external entities
+            switch_core_session_rwunlock(session4play);
+
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: hub_uuid_resume_play: step1\n", ctx->sessionid);
+            }
+
             switch_mutex_lock(ctx->mutex);
+
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: hub_uuid_resume_play: step2\n", ctx->sessionid);
+            }
+
             if (is_playing(ctx) && is_paused(ctx)) {
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: hub_uuid_resume_play: step3\n", ctx->sessionid);
+                }
+
                 resume_current_playing_for(ctx, ctx->session);
+
+                if (medhub_globals->_debug) {
+                    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: hub_uuid_resume_play: step4\n", ctx->sessionid);
+                }
+            }
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: hub_uuid_resume_play: step5\n", ctx->sessionid);
             }
 
             switch_mutex_unlock(ctx->mutex);
 
-            // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
-            //  We meet : ... Locked, Waiting on external entities
-            switch_core_session_rwunlock(session4play);
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: hub_uuid_resume_play: step6\n", ctx->sessionid);
+            }
         }
     }
 
