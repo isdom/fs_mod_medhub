@@ -78,6 +78,7 @@ typedef struct {
 
 typedef struct {
     char                    *sessionid;
+    char                    *welcome;
     switch_mutex_t          *mutex;
     char                    *medhub_url;
     switch_core_session_t   *session;
@@ -110,6 +111,8 @@ typedef struct {
     int  playback_idx;
     bool is_paused;
 } medhub_context_t;
+
+static void on_fs_playback(medhub_context_t *ctx, const nlohmann::json &json);
 
 std::string get_thread_id(const std::thread::id &id) {
     std::stringstream sin;
@@ -275,13 +278,15 @@ public:
                         }
                     }
                 } else if (hubevent["header"]["name"] == "SentenceBegin") {
-                    on_sentence_begin(_medhub_ctx, hubevent);
+                    // on_sentence_begin(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionResultChanged") {
-                    on_transcription_result_changed(_medhub_ctx, hubevent);
+                    // on_transcription_result_changed(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "SentenceEnd") {
-                    on_sentence_end(_medhub_ctx, hubevent);
+                    // on_sentence_end(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "CheckIdle") {
-                    on_check_idle(_medhub_ctx, hubevent);
+                    // on_check_idle(_medhub_ctx, hubevent);
+                } else if (hubevent["header"]["name"] == "FSPlayback") {
+                    on_fs_playback(_medhub_ctx, hubevent);
                 }
 #if ENABLE_MEDHUB_PLAYBACK
                 else if (hubevent["header"]["name"] == "PlaybackStart") {
@@ -304,7 +309,7 @@ public:
     }
 
     // This method will block until the connection is complete
-    int connect(const std::string &uri, const std::string &sessionid) {
+    int connect(const std::string &uri, const std::string &uuid, const std::string &sessionid, const std::string &welcome) {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "connect to: %s \n", uri.c_str());
         }
@@ -321,7 +326,9 @@ public:
             // Grab a handle for this connection so we can talk to it in a thread
             // safe manor after the event loop starts.
             m_hdl = con->get_handle();
+            con->append_header("x-uuid", uuid);
             con->append_header("x-sessionid", sessionid);
+            con->append_header("x-welcome", welcome);
 
             // Queue the connection. No DNS queries or network connections will be
             // made until the io_service event loop is run.
@@ -962,7 +969,6 @@ static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
 
 }
 
-
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStart 事件
@@ -1227,7 +1233,7 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
     }
 
     switch_channel_t *channel;
-    const char *str_ccs_call_id;
+    const char *str_ccs_call_id, *str_welcome;
 
     medhub_context_t *ctx;
     if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session, sizeof(medhub_context_t)))) {
@@ -1238,12 +1244,18 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
 
     channel = switch_core_session_get_channel(session);
     str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
+    str_welcome = switch_channel_get_variable(channel, "ai_speech_file");
 
     if (!str_ccs_call_id) {
         str_ccs_call_id = switch_core_session_get_uuid(session);
     }
 
+    if (!str_welcome) {
+        str_welcome = "welcome";
+    }
+
     ctx->sessionid = switch_core_session_strdup(session, str_ccs_call_id);
+    ctx->welcome = switch_core_session_strdup(session, str_welcome);
     ctx->asr_started = 0;
     ctx->asr_stopped = 0;
     ctx->asr_starting = 0;
@@ -1284,7 +1296,10 @@ static medhub_context_t *connect_medhub(medhub_context_t *ctx, const medhub_clie
                                       switch_core_session_get_uuid(ctx->session));
                 }
 
-                if (ctx->client->connect(std::string(ctx->medhub_url), std::string(ctx->sessionid)) < 0) {
+                if (ctx->client->connect(std::string(ctx->medhub_url),
+                                         std::string(switch_core_session_get_uuid(ctx->session)),
+                                         std::string(ctx->sessionid),
+                                         std::string(ctx->welcome)) < 0) {
                     ctx->asr_stopped = 1;
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                       "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
@@ -2523,6 +2538,47 @@ SWITCH_STANDARD_API(hub_uuid_tts_function) {
     return status;
 }
 #endif
+
+static void on_fs_playback(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    const std::string uuid = hub_event["payload"]["uuid"];
+    const std::string content_id = hub_event["payload"]["content_id"];
+    const std::string file = hub_event["payload"]["file"];
+
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_fs_playback: uuid[%s], content_id[%s], file[%s]\n",
+                          uuid.c_str(), content_id.c_str(), file.c_str());
+    }
+
+    switch_core_session_t *session4play = switch_core_session_force_locate(uuid.c_str());
+    if (!session4play) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback failed, can't found session by %s\n", uuid.c_str());
+    } else {
+        switch_channel_t *channel = switch_core_session_get_channel(session4play);
+
+        switch_mutex_lock(ctx->mutex);
+
+        ctx->content_id = switch_core_session_strdup(session4play, content_id.c_str());
+        ctx->playback_file = switch_core_session_strdup(session4play, file.c_str());
+        ctx->playback_idx++;
+
+        switch_mutex_unlock(ctx->mutex);
+
+        // add rwunlock for BUG: un-released channel, ref: https://blog.csdn.net/xxm524/article/details/125821116
+        //  We meet : ... Locked, Waiting on external entities
+        switch_core_session_rwunlock(session4play);
+
+        //switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s] on_fs_playback: %s\n", uuid.c_str(), file.c_str());
+        {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                              "on_fs_playback: %s before switch_ivr_broadcast: %s\n",
+                              uuid.c_str(), file.c_str());
+            switch_ivr_broadcast(uuid.c_str(), file.c_str(), (SMF_NONE | SMF_ECHO_ALEG | SMF_ECHO_BLEG));
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO,
+                              "on_fs_playback: %s after switch_ivr_broadcast %s\n",
+                              uuid.c_str(), file.c_str());
+        }
+    }
+}
 
 /**
  *  定义load函数，加载时运行
