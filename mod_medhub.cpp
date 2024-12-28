@@ -112,7 +112,9 @@ typedef struct {
     bool is_paused;
 } medhub_context_t;
 
-static void on_fs_playback(medhub_context_t *ctx, const nlohmann::json &json);
+static void on_fs_playback(medhub_context_t *ctx, const nlohmann::json &hub_event);
+static void on_fs_playback_pause(medhub_context_t *ctx, const nlohmann::json &hub_event);
+static void on_fs_playback_resume(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 std::string get_thread_id(const std::thread::id &id) {
     std::stringstream sin;
@@ -287,6 +289,10 @@ public:
                     // on_check_idle(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "FSPlayback") {
                     on_fs_playback(_medhub_ctx, hubevent);
+                } else if (hubevent["header"]["name"] == "FSPlaybackPause") {
+                    on_fs_playback_pause(_medhub_ctx, hubevent);
+                } else if (hubevent["header"]["name"] == "FSPlaybackResume") {
+                    on_fs_playback_resume(_medhub_ctx, hubevent);
                 }
 #if ENABLE_MEDHUB_PLAYBACK
                 else if (hubevent["header"]["name"] == "PlaybackStart") {
@@ -2620,8 +2626,6 @@ static void on_fs_playback(medhub_context_t *ctx, const nlohmann::json &hub_even
     if (!session4play) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback failed, can't found session by %s\n", uuid.c_str());
     } else {
-        switch_channel_t *channel = switch_core_session_get_channel(session4play);
-
         switch_mutex_lock(ctx->mutex);
 
         ctx->content_id = switch_core_session_strdup(session4play, content_id.c_str());
@@ -2644,6 +2648,46 @@ static void on_fs_playback(medhub_context_t *ctx, const nlohmann::json &hub_even
                               "on_fs_playback: %s after switch_ivr_broadcast %s\n",
                               uuid.c_str(), file.c_str());
         }
+    }
+}
+
+static void on_fs_playback_pause(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    const std::string uuid = hub_event["payload"]["uuid"];
+    const std::string content_id = hub_event["payload"]["content_id"];
+
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_fs_playback_pause: uuid[%s], content_id[%s]\n",
+                          uuid.c_str(), content_id.c_str());
+    }
+
+    switch_core_session_t *session = switch_core_session_force_locate(uuid.c_str());
+    if (!session) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback_pause failed, can't found session by %s\n", uuid.c_str());
+    } else {
+        switch_mutex_lock(ctx->mutex);
+        pause_current_playing_for(ctx, session);
+        switch_mutex_unlock(ctx->mutex);
+        switch_core_session_rwunlock(session);
+    }
+}
+
+static void on_fs_playback_resume(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    const std::string uuid = hub_event["payload"]["uuid"];
+    const std::string content_id = hub_event["payload"]["content_id"];
+
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_fs_playback_resume: uuid[%s], content_id[%s]\n",
+                          uuid.c_str(), content_id.c_str());
+    }
+
+    switch_core_session_t *session = switch_core_session_force_locate(uuid.c_str());
+    if (!session) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback_resume failed, can't found session by %s\n", uuid.c_str());
+    } else {
+        switch_mutex_lock(ctx->mutex);
+        resume_current_playing_for(ctx, session);
+        switch_mutex_unlock(ctx->mutex);
+        switch_core_session_rwunlock(session);
     }
 }
 
