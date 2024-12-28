@@ -2668,6 +2668,7 @@ static void on_fs_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback_stop failed, can't found session by %s\n", uuid.c_str());
     } else {
         switch_mutex_lock(ctx->mutex);
+        resume_current_playing_for(ctx, session);
         stop_current_playing_for(session);
         switch_mutex_unlock(ctx->mutex);
         switch_core_session_rwunlock(session);
