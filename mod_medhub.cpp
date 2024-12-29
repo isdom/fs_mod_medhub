@@ -2025,6 +2025,11 @@ static bool stop_current_playing_for(switch_core_session_t *session) {
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
     if (SWITCH_STATUS_SUCCESS == status) {
+        if (switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
+            switch_clear_flag_locked(fhp, SWITCH_FILE_PAUSE);
+            // switch_core_file_command(fhp, SCFC_PAUSE_READ);
+            // ctx->is_paused = false;
+        }
         switch_set_flag_locked(fhp, SWITCH_FILE_DONE);
         switch_ivr_release_file_handle(session, &fhp);
         return true;
@@ -2668,7 +2673,7 @@ static void on_fs_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback_stop failed, can't found session by %s\n", uuid.c_str());
     } else {
         switch_mutex_lock(ctx->mutex);
-        resume_current_playing_for(ctx, session);
+        // resume_current_playing_for(ctx, session);
         stop_current_playing_for(session);
         switch_mutex_unlock(ctx->mutex);
         switch_core_session_rwunlock(session);
