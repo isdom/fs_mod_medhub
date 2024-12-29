@@ -1714,9 +1714,14 @@ end:
 #endif
 }
 
-static void fire_report_ai_speak(const char *uuid, const char *content_id, const char *ccs_call_id,
-                                 const char *record_start_timestamp, const char *playback_start_timestamp,
-                                 const char *playback_stop_timestamp, const char *playback_ms, const char *playback_idx) {
+static void fire_report_ai_speak(const char *uuid,
+                                 const char *content_id,
+                                 const char *ccs_call_id,
+                                 const char *record_start_timestamp,
+                                 const char *playback_start_timestamp,
+                                 const char *playback_stop_timestamp,
+                                 const char *playback_ms,
+                                 const char *playback_idx) {
     switch_event_t *event = nullptr;
     if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
         switch_event_set_subclass_name(event, "znc_report_ai_speak");
@@ -1967,8 +1972,14 @@ static void on_playback_stop(switch_event_t *event) {
         if (hdr) {
             playback_idx = hdr->value;;
         }
-        fire_report_ai_speak(uuid, content_id, ccs_call_id, record_start_timestamp, playback_start_timestamp,
-                             playback_stop_timestamp, playback_ms, playback_idx);
+        fire_report_ai_speak(uuid,
+                             content_id,
+                             ccs_call_id,
+                             record_start_timestamp,
+                             playback_start_timestamp,
+                             playback_stop_timestamp,
+                             playback_ms,
+                             playback_idx);
     }
 }
 
@@ -2025,6 +2036,10 @@ static bool stop_current_playing_for(switch_core_session_t *session) {
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
     if (SWITCH_STATUS_SUCCESS == status) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
+                          "stop_current_playing_for: session [%s] => vol:%d\n",
+                          switch_core_session_get_uuid(session), fhp->vol);
+        fhp->vol = 0;
         if (switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
             switch_clear_flag_locked(fhp, SWITCH_FILE_PAUSE);
             // switch_core_file_command(fhp, SCFC_PAUSE_READ);
@@ -2673,7 +2688,6 @@ static void on_fs_playback_stop(medhub_context_t *ctx, const nlohmann::json &hub
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_fs_playback_stop failed, can't found session by %s\n", uuid.c_str());
     } else {
         switch_mutex_lock(ctx->mutex);
-        // resume_current_playing_for(ctx, session);
         stop_current_playing_for(session);
         switch_mutex_unlock(ctx->mutex);
         switch_core_session_rwunlock(session);
