@@ -116,6 +116,7 @@ static void on_fs_start_playback(medhub_context_t *ctx, const nlohmann::json &hu
 static void on_fs_stop_playback(medhub_context_t *ctx, const nlohmann::json &hub_event);
 static void on_fs_pause_playback(medhub_context_t *ctx, const nlohmann::json &hub_event);
 static void on_fs_resume_playback(medhub_context_t *ctx, const nlohmann::json &hub_event);
+static void on_fs_hangup(medhub_context_t *ctx, const nlohmann::json &hub_event);
 
 std::string get_thread_id(const std::thread::id &id) {
     std::stringstream sin;
@@ -296,6 +297,8 @@ public:
                     on_fs_pause_playback(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "FSResumePlayback") {
                     on_fs_resume_playback(_medhub_ctx, hubevent);
+                } else if (hubevent["header"]["name"] == "FSHangup") {
+                    on_fs_hangup(_medhub_ctx, hubevent);
                 }
 #if ENABLE_MEDHUB_PLAYBACK
                 else if (hubevent["header"]["name"] == "PlaybackStart") {
@@ -2741,6 +2744,25 @@ static void on_fs_resume_playback(medhub_context_t *ctx, const nlohmann::json &h
         resume_current_playing_for(ctx, session);
         switch_mutex_unlock(ctx->mutex);
         switch_core_session_rwunlock(session);
+    }
+}
+
+static void on_fs_hangup(medhub_context_t *ctx, const nlohmann::json &hub_event) {
+    const std::string uuid = hub_event["payload"]["uuid"];
+    const std::string session_id = hub_event["payload"]["sessionId"];
+
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_fs_hangup: uuid[%s], session_id[%s]\n",
+                          uuid.c_str(), session_id.c_str());
+    }
+
+    switch_call_cause_t cause = SWITCH_CAUSE_NORMAL_CLEARING;
+    if (switch_ivr_kill_uuid(uuid.c_str(), cause) != SWITCH_STATUS_SUCCESS) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: on_fs_hangup failed, can't found session by %s\n",
+                          session_id.c_str(), uuid.c_str());
+    } else {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: on_fs_hangup success, hangup %s\n",
+                          session_id.c_str(), uuid.c_str());
     }
 }
 
