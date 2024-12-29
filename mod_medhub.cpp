@@ -2031,8 +2031,16 @@ static bool is_paused(medhub_context_t *ctx) {
 }
 
 static bool stop_current_playing_for(switch_core_session_t *session) {
+#if 1
     // ref: https://github.com/signalwire/freeswitch/blob/98f164d2bff57c70aa84d71d5ead921ebbd33e22/src/switch_ivr_play_say.c#L1675
-    // switch_channel_set_flag_value(switch_core_session_get_channel(session), CF_BREAK, 2);
+    // ref: https://github.com/signalwire/freeswitch/blob/ec25d5df77c2293daa220640cef73548cc816217/src/mod/applications/mod_commands/mod_commands.c#L5011
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    if (switch_channel_test_flag(channel, CF_BROADCAST)) {
+        switch_channel_stop_broadcast(channel);
+    } else {
+        switch_channel_set_flag_value(channel, CF_BREAK, 1);
+    }
+#else
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
     if (SWITCH_STATUS_SUCCESS == status) {
@@ -2054,6 +2062,7 @@ static bool stop_current_playing_for(switch_core_session_t *session) {
                           switch_core_session_get_uuid(session), status);
         return false;
     }
+#endif
 }
 
 static bool pause_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session) {
