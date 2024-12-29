@@ -2040,6 +2040,7 @@ static bool stop_current_playing_for(switch_core_session_t *session) {
     } else {
         switch_channel_set_flag_value(channel, CF_BREAK, 1);
     }
+    return true;
 #else
     switch_file_handle_t *fhp = nullptr;
     const switch_status_t status = switch_ivr_get_file_handle(session, &fhp);
