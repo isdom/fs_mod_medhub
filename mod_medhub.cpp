@@ -2039,7 +2039,7 @@ static bool stop_current_playing_for(switch_core_session_t *session) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                           "stop_current_playing_for: session [%s] => vol:%d\n",
                           switch_core_session_get_uuid(session), fhp->vol);
-        fhp->vol = 0;
+        fhp->vol = -4;
         if (switch_test_flag(fhp, SWITCH_FILE_PAUSE)) {
             switch_clear_flag_locked(fhp, SWITCH_FILE_PAUSE);
             // switch_core_file_command(fhp, SCFC_PAUSE_READ);
