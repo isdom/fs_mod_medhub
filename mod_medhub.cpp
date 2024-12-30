@@ -79,6 +79,7 @@ typedef struct {
 typedef struct {
     char                    *sessionid;
     char                    *welcome;
+    char                    *record_start_timestamp;
     switch_mutex_t          *mutex;
     char                    *medhub_url;
     switch_core_session_t   *session;
@@ -321,7 +322,11 @@ public:
     }
 
     // This method will block until the connection is complete
-    int connect(const std::string &uri, const std::string &uuid, const std::string &sessionid, const std::string &welcome) {
+    int connect(const std::string &uri,
+                const std::string &uuid,
+                const std::string &sessionid,
+                const std::string &welcome,
+                const std::string &record_start_timestamp) {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "connect to: %s \n", uri.c_str());
         }
@@ -341,6 +346,7 @@ public:
             con->append_header("x-uuid", uuid);
             con->append_header("x-sessionid", sessionid);
             con->append_header("x-welcome", welcome);
+            con->append_header("x-rst", record_start_timestamp);
 
             // Queue the connection. No DNS queries or network connections will be
             // made until the io_service event loop is run.
@@ -416,6 +422,42 @@ public:
 
         const std::string str_event = json_event.dump();
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "send_playback_stop_event: detail: %s\n",
+                          str_event.c_str());
+
+        websocketpp::lib::error_code ec;
+        m_client.send(m_hdl, str_event, websocketpp::frame::opcode::text, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send event msg failed: %s\n",
+                              ec.message().c_str());
+        } else {
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "medhub send event msg success\n");
+            }
+        }
+    }
+
+    void send_record_start_event(const char *record_start_timestamp) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send record start event\n");
+        }
+
+        nlohmann::json json_event = {
+                {"header", {
+                                   // 当次消息请求ID，随机生成32位唯一ID。
+                                   //{"message_id", message_id},
+                                   // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                                   //{"task_id", m_task_id},
+                                   //{"namespace", "FlowingSpeechSynthesizer"},
+                                   {"name", "FSRecordStarted"}
+                                   //{"appkey", m_appkey}
+                           }} ,
+                {"payload", {
+                                   {"record_start_timestamp", record_start_timestamp}
+                           }}
+        };
+
+        const std::string str_event = json_event.dump();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "send_record_start_event: detail: %s\n",
                           str_event.c_str());
 
         websocketpp::lib::error_code ec;
@@ -652,8 +694,6 @@ public:
 
     websocketpp::client<T> m_client;
     websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
-
-
 private:
 
     medhub_context_t *_medhub_ctx;
@@ -1281,7 +1321,7 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
     }
 
     switch_channel_t *channel;
-    const char *str_ccs_call_id, *str_welcome;
+    const char *str_ccs_call_id, *str_welcome, *str_record_start_timestamp;
 
     medhub_context_t *ctx;
     if (!(ctx = (medhub_context_t *) switch_core_session_alloc(session, sizeof(medhub_context_t)))) {
@@ -1293,6 +1333,7 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
     channel = switch_core_session_get_channel(session);
     str_ccs_call_id = switch_channel_get_variable(channel, "ccs_call_id");
     str_welcome = switch_channel_get_variable(channel, "ai_speech_file");
+    str_record_start_timestamp = switch_channel_get_variable(channel, "record_start_timestamp");
 
     if (!str_ccs_call_id) {
         str_ccs_call_id = switch_core_session_get_uuid(session);
@@ -1302,8 +1343,13 @@ static medhub_context_t *init_medhub_ctx_for(const char *url, const char* uuid) 
         str_welcome = "welcome";
     }
 
+    if (!str_record_start_timestamp) {
+        str_record_start_timestamp = "-1";
+    }
+
     ctx->sessionid = switch_core_session_strdup(session, str_ccs_call_id);
     ctx->welcome = switch_core_session_strdup(session, str_welcome);
+    ctx->record_start_timestamp = switch_core_session_strdup(session, str_record_start_timestamp);
     ctx->asr_started = 0;
     ctx->asr_stopped = 0;
     ctx->asr_starting = 0;
@@ -1347,7 +1393,8 @@ static medhub_context_t *connect_medhub(medhub_context_t *ctx, const medhub_clie
                 if (ctx->client->connect(std::string(ctx->medhub_url),
                                          std::string(switch_core_session_get_uuid(ctx->session)),
                                          std::string(ctx->sessionid),
-                                         std::string(ctx->welcome)) < 0) {
+                                         std::string(ctx->welcome),
+                                         std::string(ctx->record_start_timestamp)) < 0) {
                     ctx->asr_stopped = 1;
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                       "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
@@ -1765,16 +1812,33 @@ static void on_record_start(switch_event_t *event) {
     }
 
     switch_core_session *session  = switch_core_session_force_locate(uuid);
-    if (session) {
-        switch_channel_t *channel = switch_core_session_get_channel(session);
-        hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
-        const char *record_start_timestamp = hdr->value;
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_record_start: record_start_timestamp: %s", record_start_timestamp);
-        }
-        switch_channel_set_variable_printf(channel, "record_start_timestamp", "%s", record_start_timestamp);
-        switch_core_session_rwunlock(session);
+    if (!session) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_record_start: locate session [%s] failed, maybe ended\n",
+                          uuid);
+        return;
     }
+
+    switch_channel_t *channel = switch_core_session_get_channel(session);
+    hdr = switch_event_get_header_ptr(event, "Event-Date-Timestamp");
+    const char *record_start_timestamp = hdr->value;
+    if (medhub_globals->_debug) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_record_start: record_start_timestamp: %s", record_start_timestamp);
+    }
+    switch_channel_set_variable_printf(channel, "record_start_timestamp", "%s", record_start_timestamp);
+
+    auto *ctx = (medhub_context_t *)switch_channel_get_private(channel, MEDHUB_CTX_NAME);
+    if (!ctx) {
+        switch_core_session_rwunlock(session);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_record_start: can't found medhub ctx by %s\n", uuid);
+        return;
+    }
+
+    switch_mutex_lock(ctx->mutex);
+    // update record_start_timestamp value both local and remote
+    ctx->record_start_timestamp = switch_core_session_strdup(session, record_start_timestamp);
+    ctx->client->send_record_start_event(record_start_timestamp);
+    switch_mutex_unlock(ctx->mutex);
+    switch_core_session_rwunlock(session);
 }
 
 static void on_playback_start(switch_event_t *event) {
