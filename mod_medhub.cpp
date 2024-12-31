@@ -1559,7 +1559,8 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
             }
         }
 
-        if (ctx->asr_started) {
+        //if (ctx->asr_started)
+        {
             websocketpp::lib::error_code ec;
             ctx->client->send_audio_data((uint8_t *) data, (size_t) data_len, ec);
 
@@ -1573,8 +1574,8 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
                 ret_val = false;
                 goto unlock;
             }
-        } else {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send_audio_to_medhub: connecting, ignore send audio\n");
+        //} else {
+        //    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "send_audio_to_medhub: connecting, ignore send audio\n");
         }
         ret_val = true;
         if (medhub_globals->_debug) {
