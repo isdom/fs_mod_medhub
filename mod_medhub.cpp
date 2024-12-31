@@ -176,8 +176,6 @@ void on_task_failed(medhub_context_t *ctx);
  */
 void on_channel_closed(medhub_context_t *ctx);
 
-static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json);
-
 static bool stop_current_playing_for(switch_core_session_t *session);
 static bool pause_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session);
 static bool resume_current_playing_for(medhub_context_t *ctx, switch_core_session_t *session);
