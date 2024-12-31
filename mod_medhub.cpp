@@ -225,37 +225,61 @@ public:
     typedef std::function<void(medhub_client *)> on_connected_t;
 
     WebsocketClient(int is_ssl, medhub_context_t *medhub_ctx, const on_connected_t &on_connected)
-    : m_open(false), m_done(false) {
+    : m_asr_open(false), m_asr_done(false) {
         _medhub_ctx = medhub_ctx;
         _on_connected = on_connected;
 
         // set up access channels to only log interesting things
-        m_client.clear_access_channels(websocketpp::log::alevel::all);
-        m_client.set_access_channels(websocketpp::log::alevel::connect);
-        m_client.set_access_channels(websocketpp::log::alevel::disconnect);
-        m_client.set_access_channels(websocketpp::log::alevel::app);
+        m_asr.clear_access_channels(websocketpp::log::alevel::all);
+        m_asr.set_access_channels(websocketpp::log::alevel::connect);
+        m_asr.set_access_channels(websocketpp::log::alevel::disconnect);
+        m_asr.set_access_channels(websocketpp::log::alevel::app);
 
         // Initialize the Asio transport policy
-        m_client.init_asio();
-        m_client.start_perpetual();
+        m_asr.init_asio();
+        m_asr.start_perpetual();
 
         // Bind the handlers we are using
         using websocketpp::lib::bind;
         using websocketpp::lib::placeholders::_1;
-        m_client.set_open_handler(bind(&WebsocketClient::on_open, this, _1));
-        m_client.set_close_handler(bind(&WebsocketClient::on_close, this, _1));
+        m_asr.set_open_handler(bind(&WebsocketClient::on_asr_open, this, _1));
+        m_asr.set_close_handler(bind(&WebsocketClient::on_asr_close, this, _1));
 
-        m_client.set_message_handler(
+        m_asr.set_message_handler(
                 [this](websocketpp::connection_hdl hdl, message_ptr msg) {
                     on_message(hdl, msg);
                 });
 
-        m_client.set_fail_handler(bind(&WebsocketClient::on_fail, this, _1));
-        m_client.clear_access_channels(websocketpp::log::alevel::all);
+        m_asr.set_fail_handler(bind(&WebsocketClient::on_asr_fail, this, _1));
+        m_asr.clear_access_channels(websocketpp::log::alevel::all);
+
+        m_playback.clear_access_channels(websocketpp::log::alevel::all);
+        m_playback.set_access_channels(websocketpp::log::alevel::connect);
+        m_playback.set_access_channels(websocketpp::log::alevel::disconnect);
+        m_playback.set_access_channels(websocketpp::log::alevel::app);
+
+        // Initialize the Asio transport policy
+        m_playback.init_asio();
+        m_playback.start_perpetual();
+
+        m_playback.set_open_handler(bind(&WebsocketClient::on_playback_open, this, _1));
+        m_playback.set_close_handler(bind(&WebsocketClient::on_playback_close, this, _1));
+
+        m_playback.set_message_handler(
+                [this](websocketpp::connection_hdl hdl, message_ptr msg) {
+                    on_message(hdl, msg);
+                });
+
+        m_playback.set_fail_handler(bind(&WebsocketClient::on_playback_fail, this, _1));
+        m_playback.clear_access_channels(websocketpp::log::alevel::all);
     }
 
-    bool is_connected() {
-        return m_open && !m_done;
+    bool is_asr_connected() {
+        return m_asr_open && !m_asr_done;
+    }
+
+    bool is_playback_connected() {
+        return m_playback_open && !m_playback_done;
     }
 
     void on_message(websocketpp::connection_hdl hdl, message_ptr msg) {
@@ -276,7 +300,7 @@ public:
                     on_transcription_completed(_medhub_ctx, hubevent);
                     {
                         websocketpp::lib::error_code ec;
-                        m_client.close(hdl, websocketpp::close::status::going_away, "", ec);
+                        m_asr.close(hdl, websocketpp::close::status::going_away, "", ec);
                         if (ec) {
                             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "Error closing connection: %s\n",
                                               ec.message().c_str());
@@ -327,35 +351,60 @@ public:
                 const std::string &sessionid,
                 const std::string &welcome,
                 const std::string &record_start_timestamp) {
+        _uri = uri;
+        _sessionid = sessionid;
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "connect to: %s \n", uri.c_str());
         }
 
-        {
-            // Create a new connection to the given URI
-            websocketpp::lib::error_code ec;
-            typename websocketpp::client<T>::connection_ptr con = m_client.get_connection(uri, ec);
-            if (ec) {
-                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Get Connection Error: %s\n",
-                                  ec.message().c_str());
-                return -1;
-            }
-            // Grab a handle for this connection so we can talk to it in a thread
-            // safe manor after the event loop starts.
-            m_hdl = con->get_handle();
-            con->append_header("x-uuid", uuid);
-            con->append_header("x-sessionid", sessionid);
-            con->append_header("x-welcome", welcome);
-            con->append_header("x-rst", record_start_timestamp);
-
-            // Queue the connection. No DNS queries or network connections will be
-            // made until the io_service event loop is run.
-            m_client.connect(con);
+        // Create a new connection to the given URI
+        websocketpp::lib::error_code ec;
+        typename websocketpp::client<T>::connection_ptr con = m_asr.get_connection(uri, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Get Connection Error: %s\n",
+                              ec.message().c_str());
+            return -1;
         }
+        // Grab a handle for this connection so we can talk to it in a thread
+        // safe manor after the event loop starts.
+        m_asr_hdl = con->get_handle();
+        con->append_header("x-role", "asr");
+        con->append_header("x-uuid", uuid);
+        con->append_header("x-sessionid", sessionid);
+        con->append_header("x-welcome", welcome);
+        con->append_header("x-rst", record_start_timestamp);
+
+        // Queue the connection. No DNS queries or network connections will be
+        // made until the io_service event loop is run.
+        m_asr.connect(con);
 
         // Create a thread to run the ASIO io_service event loop
-        m_thread.reset(new websocketpp::lib::thread(&websocketpp::client<T>::run, &m_client));
+        m_asr_thread.reset(new websocketpp::lib::thread(&websocketpp::client<T>::run, &m_asr));
         return 0;
+    }
+
+    void connect_playback() {
+        // Create a new connection to the given URI
+        std::error_code ec;
+        typename websocketpp::client<T>::connection_ptr con = m_playback.get_connection(_uri, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "Get Connection Error: %s\n",
+                              ec.message().c_str());
+            return;
+        }
+
+        // Grab a handle for this connection so we can talk to it in a thread
+        // safe manor after the event loop starts.
+        m_playback_hdl = con->get_handle();
+        con->append_header("x-role", "playback");
+        con->append_header("x-sessionid", _sessionid);
+
+        // Queue the connection. No DNS queries or network connections will be
+        // made until the io_service event loop is run.
+        m_playback.connect(con);
+
+        // Create a thread to run the ASIO io_service event loop
+        m_playback_thread.reset(new std::thread(&websocketpp::client<T>::run, &m_playback));
     }
 
     int startTranscription() {
@@ -387,7 +436,7 @@ public:
                           str_startTranscription.c_str());
 
         websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_startTranscription, websocketpp::frame::opcode::text, ec);
+        m_asr.send(m_asr_hdl, str_startTranscription, websocketpp::frame::opcode::text, ec);
         if (ec) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send begin msg failed: %s\n",
                               ec.message().c_str());
@@ -425,7 +474,7 @@ public:
                           str_event.c_str());
 
         websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_event, websocketpp::frame::opcode::text, ec);
+        m_playback.send(m_playback_hdl, str_event, websocketpp::frame::opcode::text, ec);
         if (ec) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send event msg failed: %s\n",
                               ec.message().c_str());
@@ -461,7 +510,7 @@ public:
                           str_event.c_str());
 
         websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_event, websocketpp::frame::opcode::text, ec);
+        m_playback.send(m_playback_hdl, str_event, websocketpp::frame::opcode::text, ec);
         if (ec) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send event msg failed: %s\n",
                               ec.message().c_str());
@@ -483,12 +532,7 @@ public:
                             //{"namespace", "FlowingSpeechSynthesizer"},
                             {"name", "StopTranscription"}
                             //{"appkey", m_appkey}
-                    }} //,
-                    //{"payload", {
-                    //                   {"format", "pcm"},
-                    //                   {"sample_rate", 16000},
-                    //                   {"enable_subtitle", true}
-                    //           }}
+                    }}
             };
 
             const std::string str_stopTranscription = json_stopTranscription.dump();
@@ -496,7 +540,7 @@ public:
                               _medhub_ctx->sessionid, str_stopTranscription.c_str());
 
             websocketpp::lib::error_code ec;
-            m_client.send(m_hdl, str_stopTranscription, websocketpp::frame::opcode::text, ec);
+            m_asr.send(m_asr_hdl, str_stopTranscription, websocketpp::frame::opcode::text, ec);
             if (ec) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "[%s]: medhub send stop msg failed: %s\n",
                                   _medhub_ctx->sessionid, ec.message().c_str());
@@ -508,45 +552,70 @@ public:
             }
         }
 
-        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step1\n",
-        //                  _medhub_ctx->sessionid);
-        m_client.stop_perpetual();
-        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step2\n",
-        //                  _medhub_ctx->sessionid);
-//        void close(connection_hdl hdl, close::status::value const code,
-//                   std::string const & reason);
+        m_asr.stop_perpetual();
+        //        void close(connection_hdl hdl, close::status::value const code,
+        //                   std::string const & reason);
         // https://docs.websocketpp.org/faq.html
         // How do I cleanly exit an Asio transport based program
         // For clients, if you have engaged perpetual mode with websocketpp::transport::asio::endpoint::start_perpetual,
         //          disable it with websocketpp::transport::asio::endpoint::stop_perpetual.
         // For both, run websocketpp::endpoint::close or websocketpp::connection::close on all currently outstanding connections.
         //          This will initiate the WebSocket closing handshake for these connections
-        if (is_connected()) {
-            // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step3\n",
-            //                  _medhub_ctx->sessionid);
-            m_client.close(m_hdl, websocketpp::close::status::normal, "");
+        if (is_asr_connected()) {
+            m_asr.close(m_asr_hdl, websocketpp::close::status::normal, "");
         }
-
-        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step4\n",
-        //                  _medhub_ctx->sessionid);
-        m_thread->join();
-
-        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step5\n",
-        //                  _medhub_ctx->sessionid);
+        m_asr_thread->join();
         on_channel_closed(_medhub_ctx);
-        // switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub stop step6\n",
-        //                  _medhub_ctx->sessionid);
+
+        m_playback.stop_perpetual();
+        //        void close(connection_hdl hdl, close::status::value const code,
+        //                   std::string const & reason);
+        // https://docs.websocketpp.org/faq.html
+        // How do I cleanly exit an Asio transport based program
+        // For clients, if you have engaged perpetual mode with websocketpp::transport::asio::endpoint::start_perpetual,
+        //          disable it with websocketpp::transport::asio::endpoint::stop_perpetual.
+        // For both, run websocketpp::endpoint::close or websocketpp::connection::close on all currently outstanding connections.
+        //          This will initiate the WebSocket closing handshake for these connections
+        if (is_playback_connected()) {
+            m_playback.close(m_playback_hdl, websocketpp::close::status::normal, "");
+        }
+        m_playback_thread->join();
     }
 
     // The open handler will signal that we are ready to start sending data
-    void on_open(const websocketpp::connection_hdl &) {
+    void on_asr_open(const websocketpp::connection_hdl &) {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Connection opened, starting data!\n");
         }
 
         {
             scoped_lock guard(m_lock);
-            m_open = true;
+            m_asr_open = true;
+        }
+        connect_playback();
+
+    }
+
+    // The close handler will signal that we should stop sending data
+    void on_asr_close(const websocketpp::connection_hdl &) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub ws connection closed!\n",
+                          _medhub_ctx->sessionid);
+
+        {
+            scoped_lock guard(m_lock);
+            m_asr_done = true;
+        }
+    }
+
+    // The open handler will signal that we are ready to start sending data
+    void on_playback_open(const websocketpp::connection_hdl &) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "Connection opened, starting data!\n");
+        }
+
+        {
+            scoped_lock guard(m_lock);
+            m_playback_open = true;
         }
         if (_on_connected) {
             _on_connected(this);
@@ -554,30 +623,41 @@ public:
     }
 
     // The close handler will signal that we should stop sending data
-    void on_close(const websocketpp::connection_hdl &) {
+    void on_playback_close(const websocketpp::connection_hdl &) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "[%s]: medhub ws connection closed!\n",
                           _medhub_ctx->sessionid);
 
         {
             scoped_lock guard(m_lock);
-            m_done = true;
+            m_playback_done = true;
         }
     }
 
     // The fail handler will signal that we should stop sending data
-    void on_fail(const websocketpp::connection_hdl &) {
+    void on_asr_fail(const websocketpp::connection_hdl &) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "%s: Connection failed, stopping data!\n",
                           _medhub_ctx->sessionid);
 
         {
             scoped_lock guard(m_lock);
-            m_done = true;
+            m_asr_done = true;
+        }
+        on_task_failed(_medhub_ctx);
+    }
+
+    void on_playback_fail(const websocketpp::connection_hdl &) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "%s: Connection failed, stopping data!\n",
+                          _medhub_ctx->sessionid);
+
+        {
+            scoped_lock guard(m_lock);
+            m_asr_done = true;
         }
         on_task_failed(_medhub_ctx);
     }
 
     void send_audio_data(uint8_t *dp, size_t data_len, websocketpp::lib::error_code &ec) {
-        m_client.send(m_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
+        m_asr.send(m_asr_hdl, dp, data_len, websocketpp::frame::opcode::binary, ec);
     }
 
     void set_args(const nlohmann::json &args) {
@@ -616,7 +696,7 @@ public:
         }
 
         websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_playback, websocketpp::frame::opcode::text, ec);
+        m_asr.send(m_asr_hdl, str_playback, websocketpp::frame::opcode::text, ec);
         if (ec) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send playback msg failed: %s\n",
                               ec.message().c_str());
@@ -648,7 +728,7 @@ public:
                           str_playtts.c_str());
 
         websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_playtts, websocketpp::frame::opcode::text, ec);
+        m_asr.send(m_asr_hdl, str_playtts, websocketpp::frame::opcode::text, ec);
         if (ec) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send playtts msg failed: %s\n",
                               ec.message().c_str());
@@ -680,7 +760,7 @@ public:
                           str_stop_playback.c_str());
 
         websocketpp::lib::error_code ec;
-        m_client.send(m_hdl, str_stop_playback, websocketpp::frame::opcode::text, ec);
+        m_asr.send(m_asr_hdl, str_stop_playback, websocketpp::frame::opcode::text, ec);
         if (ec) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "medhub send stop playback msg failed: %s\n",
                               ec.message().c_str());
@@ -692,18 +772,28 @@ public:
     }
 #endif
 
-    websocketpp::client<T> m_client;
-    websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_thread;
-private:
+    websocketpp::client<T> m_asr;
+    websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_asr_thread;
 
+    websocketpp::client<T> m_playback;
+    websocketpp::lib::shared_ptr<websocketpp::lib::thread> m_playback_thread;
+private:
     medhub_context_t *_medhub_ctx;
-    websocketpp::connection_hdl m_hdl;
+    websocketpp::connection_hdl m_asr_hdl;
+    websocketpp::connection_hdl m_playback_hdl;
+
+    bool m_asr_open;
+    bool m_asr_done;
+
+    bool m_playback_open;
+    bool m_playback_done;
+
     websocketpp::lib::mutex m_lock;
-    bool m_open;
-    bool m_done;
     nlohmann::json _init_args;
 
     on_connected_t _on_connected;
+    std::string _uri;
+    std::string _sessionid;
 };
 
 class condition_latch_t {
@@ -1011,52 +1101,6 @@ void on_channel_closed(medhub_context_t *ctx) {
      */
 }
 
-static void on_check_idle(medhub_context_t *ctx, const nlohmann::json &json) {
-    long idle_timeout_ms = 10 * 1000L;
-    bool is_answered = false;
-    if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
-        switch_channel_t *channel = switch_core_session_get_channel(ctx->session);
-
-        is_answered = switch_channel_test_flag(channel, CF_ANSWERED);
-        const char *str_idle_timeout = switch_channel_get_variable(channel, "idle_timeout");
-        if (str_idle_timeout) {
-            idle_timeout_ms = switch_safe_atol(str_idle_timeout, 10 * 1000);
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle_timeout: [%ld] ms\n", idle_timeout_ms);
-        }
-
-        switch_core_session_rwunlock(ctx->session);
-    }
-
-    switch_mutex_lock(ctx->mutex);
-    const long idle_duration_ms = (switch_time_now() - ctx->begin_idle_timestamp) / 1000L;
-    bool _is_speaking = is_speaking(ctx);
-    bool _is_playing = is_playing(ctx);
-    switch_mutex_unlock(ctx->mutex);
-
-    if (is_answered && !_is_speaking && !_is_playing && (idle_duration_ms >= idle_timeout_ms)) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: idle duration: %ld ms >=: [%ld] ms\n", idle_duration_ms, idle_timeout_ms);
-        switch_event_t *event = nullptr;
-        if (SWITCH_STATUS_SUCCESS == switch_core_session_read_lock(ctx->session)) {
-            const char *unique_id = switch_core_session_get_uuid(ctx->session);
-            if (switch_event_create(&event, SWITCH_EVENT_CUSTOM) == SWITCH_STATUS_SUCCESS) {
-                switch_event_set_subclass_name(event, "znc_idle_timeout");
-                switch_event_add_header_string(event, SWITCH_STACK_BOTTOM, "Unique-ID", unique_id);
-                switch_event_add_header(event, SWITCH_STACK_BOTTOM, "Idle-Time", "%ld", idle_duration_ms);
-                switch_event_fire(&event);
-            }
-            switch_core_session_rwunlock(ctx->session);
-        } else {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "on_check_idle: session [%s] switch_core_session_read_lock failed\n",
-                              switch_core_session_get_uuid(ctx->session));
-        }
-        // ctx->begin_idle_timestamp = switch_time_now();
-    } else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_check_idle: is_answered: %d/is_speaking: %d/is_playing: %d/idle duration: %ld ms\n",
-                          is_answered, _is_speaking, _is_playing, idle_duration_ms);
-    }
-
-}
-
 #if ENABLE_MEDHUB_PLAYBACK
 void on_playback_start(medhub_context_t *ctx, const nlohmann::json &hub_event) {
     /* PlaybackStart 事件
@@ -1178,7 +1222,7 @@ medhub_client *generateMediaHubClient(medhub_context_t *ctx, const medhub_client
     }
 
 #if ENABLE_WSS
-    client->m_client.set_tls_init_handler(bind(&OnTlsInit, ::_1));
+    client->m_asr.set_tls_init_handler(bind(&OnTlsInit, ::_1));
 #endif
 
     if (medhub_globals->_debug) {
@@ -1528,7 +1572,7 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
     switch_mutex_lock(ctx->mutex);
     ctx->asr_callback = asr_callback;
     if (ctx->client) {
-        if (ctx->client->is_connected()) {
+        if (ctx->client->is_asr_connected()) {
             if (medhub_globals->_debug) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Transaction \n");
             }
