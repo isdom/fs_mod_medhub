@@ -225,7 +225,7 @@ public:
     typedef std::function<void(medhub_client *)> on_connected_t;
 
     WebsocketClient(int is_ssl, medhub_context_t *medhub_ctx, const on_connected_t &on_connected)
-    : m_asr_open(false), m_asr_done(false) {
+    : m_asr_open(false), m_asr_done(false), m_playback_open(false), m_playback_done(false) {
         _medhub_ctx = medhub_ctx;
         _on_connected = on_connected;
 
