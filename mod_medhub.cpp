@@ -651,7 +651,7 @@ public:
 
         {
             scoped_lock guard(m_lock);
-            m_asr_done = true;
+            m_playback_done = true;
         }
         on_task_failed(_medhub_ctx);
     }
