@@ -292,7 +292,9 @@ public:
                                       payload.c_str());
                 }
 
-                if (hubevent["header"]["name"] == "TranscriptionStarted") {
+                if (hubevent["header"]["name"] == "FSConnected") {
+                    connect_playback();
+                } else if (hubevent["header"]["name"] == "TranscriptionStarted") {
                     on_transcription_started(_medhub_ctx, hubevent);
                 } else if (hubevent["header"]["name"] == "TranscriptionCompleted") {
                     on_transcription_completed(_medhub_ctx, hubevent);
@@ -590,8 +592,6 @@ public:
             scoped_lock guard(m_lock);
             m_asr_open = true;
         }
-        connect_playback();
-
     }
 
     // The close handler will signal that we should stop sending data
