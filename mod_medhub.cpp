@@ -1966,7 +1966,7 @@ static void clear_playing_content(const char *session_uuid, const char *stopped_
     switch_mutex_lock(ctx->mutex);
     if (stopped_content_id && ctx->content_id && strcmp(stopped_content_id, ctx->content_id) == 0) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id equals current content_id:%s, so clear content_id",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id equals current content_id:%s, so clear content_id\n",
                               session_uuid, stopped_content_id);
         }
         ctx->content_id = nullptr;
@@ -1978,7 +1978,7 @@ static void clear_playing_content(const char *session_uuid, const char *stopped_
         }
     }
     else {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id:%s !NOT! equals current content_id:%s, ignore.",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "clear_playing_content: session[%s] event's content_id:%s !NOT! equals current content_id:%s, ignore.\n",
                           session_uuid, stopped_content_id, ctx->content_id);
     }
     switch_mutex_unlock(ctx->mutex);
