@@ -524,8 +524,8 @@ public:
         };
 
         const std::string str_event = json_event.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "send_record_start_event: detail: %s\n",
-                          str_event.c_str());
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: send_record_start_event: detail: %s\n",
+                          _medhub_ctx->sessionid, str_event.c_str());
 
         websocketpp::lib::error_code ec;
         m_playback.send(m_playback_hdl, str_event, websocketpp::frame::opcode::text, ec);
