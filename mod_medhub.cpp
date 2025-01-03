@@ -412,6 +412,12 @@ public:
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send StartTranscription command\n");
         }
 
+        if (!is_asr_connected()) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: startTranscription failed for asr_not_connected!\n",
+                              _medhub_ctx->sessionid);
+            return -1;
+        }
+
         nlohmann::json json_startTranscription = {
                 {"header", {
                                    // 当次消息请求ID，随机生成32位唯一ID。
@@ -432,8 +438,8 @@ public:
         json_startTranscription.merge_patch(_init_args);
 
         const std::string str_startTranscription = json_startTranscription.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "startTranscription: send StartTranscription command, detail: %s\n",
-                          str_startTranscription.c_str());
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: startTranscription: detail: %s\n",
+                          _medhub_ctx->sessionid, str_startTranscription.c_str());
 
         websocketpp::lib::error_code ec;
         m_asr.send(m_asr_hdl, str_startTranscription, websocketpp::frame::opcode::text, ec);
@@ -454,6 +460,12 @@ public:
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send playback stop event\n");
         }
 
+        if (!is_playback_connected()) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send_playback_stop_event failed for playback_not_connected!\n",
+                              _medhub_ctx->sessionid);
+            return;
+        }
+
         nlohmann::json json_event = {
                 {"header", {
                         // 当次消息请求ID，随机生成32位唯一ID。
@@ -470,8 +482,8 @@ public:
         };
 
         const std::string str_event = json_event.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "send_playback_stop_event: detail: %s\n",
-                          str_event.c_str());
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: send_playback_stop_event: detail: %s\n",
+                          _medhub_ctx->sessionid, str_event.c_str());
 
         websocketpp::lib::error_code ec;
         m_playback.send(m_playback_hdl, str_event, websocketpp::frame::opcode::text, ec);
@@ -488,6 +500,12 @@ public:
     void send_record_start_event(const char *record_start_timestamp) {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send record start event\n");
+        }
+
+        if (!is_playback_connected()) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send_record_start_event failed for playback_not_connected!\n",
+                              _medhub_ctx->sessionid);
+            return;
         }
 
         nlohmann::json json_event = {
