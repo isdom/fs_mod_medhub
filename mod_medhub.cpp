@@ -90,7 +90,7 @@ typedef struct {
     //  asr fields
     asr_callback_t  *asr_callback;
     int             asr_started;
-    int             asr_stopped;
+    switch_atomic_t asr_stopped;
     int             asr_starting;
     switch_audio_resampler_t *re_sampler;
     int             asr_current_sentence_idx;
@@ -407,13 +407,13 @@ public:
         m_playback_thread.reset(new std::thread(&websocketpp::client<T>::run, &m_playback));
     }
 
-    int startTranscription() {
+    int start_transcription() {
         if (medhub_globals->_debug) {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "send StartTranscription command\n");
         }
 
         if (!is_asr_connected()) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: startTranscription failed for asr_not_connected!\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: start_transcription failed for asr_not_connected!\n",
                               _medhub_ctx->sessionid);
             return -1;
         }
@@ -438,7 +438,7 @@ public:
         json_startTranscription.merge_patch(_init_args);
 
         const std::string str_startTranscription = json_startTranscription.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: startTranscription: detail: %s\n",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: start_transcription: detail: %s\n",
                           _medhub_ctx->sessionid, str_startTranscription.c_str());
 
         websocketpp::lib::error_code ec;
@@ -1455,7 +1455,7 @@ static medhub_context_t *connect_medhub(medhub_context_t *ctx, const medhub_clie
                                          std::string(ctx->sessionid),
                                          std::string(ctx->welcome),
                                          std::string(ctx->record_start_timestamp)) < 0) {
-                    ctx->asr_stopped = 1;
+                    switch_atomic_set(&ctx->asr_stopped, 1);
                     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE,
                                       "start() failed. may be can not connect media hub server(%s). please check network or firewalld:%s\n",
                                       ctx->medhub_url, switch_channel_get_name(channel));
@@ -1581,8 +1581,9 @@ static void *init_medhub(switch_core_session_t *session, const switch_codec_impl
 
 static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
     bool  ret_val = false;
-    if (ctx->asr_stopped == 1) {
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "start_medhub: ctx->stopped\n");
+    if (switch_atomic_read(&ctx->asr_stopped) == 1) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[%s]: start_medhub: ctx->asr_stopped\n",
+                          ctx->sessionid);
         return ret_val;
     }
     switch_mutex_lock(ctx->mutex);
@@ -1592,7 +1593,7 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
             if (medhub_globals->_debug) {
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Starting Transaction \n");
             }
-            ctx->client->startTranscription();
+            ctx->client->start_transcription();
         } else {
             switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "media hub not connect, ignore \n");
         }
@@ -1605,6 +1606,12 @@ static bool start_medhub(medhub_context_t *ctx, asr_callback_t *asr_callback) {
 
 static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t data_len) {
     bool  ret_val = false;
+    if (switch_atomic_read(&ctx->asr_stopped) == 1) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[%s]: send_audio_to_medhub: ctx->asr_stopped\n",
+                          ctx->sessionid);
+        return ret_val;
+    }
+
     // send audio to asr
     switch_mutex_lock(ctx->mutex);
 
@@ -1619,13 +1626,12 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
             }
         }
 
-        //if (ctx->asr_started)
         {
             websocketpp::lib::error_code ec;
             ctx->client->send_audio_data((uint8_t *) data, (size_t) data_len, ec);
 
             if (ec) {
-                ctx->asr_stopped = 1;
+                switch_atomic_set(&ctx->asr_stopped, 1);
                 switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send audio failed: %s\n",
                                   ctx->sessionid, ec.message().c_str());
                 ctx->client->stop();
@@ -1655,28 +1661,27 @@ static bool send_audio_to_medhub(medhub_context_t *ctx, void *data, uint32_t dat
 }
 
 static void stop_medhub(medhub_context_t *ctx) {
+    if (switch_atomic_read(&ctx->asr_stopped) == 1) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[%s]: stop_medhub: ctx->asr_stopped\n",
+                          ctx->sessionid);
+        return;
+    }
+
     switch_mutex_lock(ctx->mutex);
     if (ctx->client) {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: try to stop medhub on channel\n",
-                              ctx->sessionid);
-        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: try to stop medhub on channel\n",
+                          ctx->sessionid);
+        switch_atomic_set(&ctx->asr_stopped, 1);
         ctx->client->stop();
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: after stop medhub on channel\n",
-                              ctx->sessionid);
-        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: after stop medhub on channel\n",
+                          ctx->sessionid);
         delete ctx->client;
         ctx->client = nullptr;
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: stop medhub and client is released\n",
-                              ctx->sessionid);
-        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: stop medhub and client is released\n",
+                          ctx->sessionid);
     } else {
-        if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: medhub has already stopped and released\n",
-                              ctx->sessionid);
-        }
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: medhub has already stopped and released\n",
+                          ctx->sessionid);
     }
     switch_mutex_unlock(ctx->mutex);
 }
@@ -1697,10 +1702,8 @@ static void destroy_medhub(medhub_context_t *ctx) {
                           medhub_ctx->sessionid);
     }
     stop_medhub(ctx);
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: stop_medhub\n",
-                          medhub_ctx->sessionid);
-    }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: stop_medhub\n",
+                      medhub_ctx->sessionid);
 
     // decrement medhub concurrent count
     switch_atomic_dec(&medhub_globals->medhub_concurrent_cnt);
@@ -1708,15 +1711,13 @@ static void destroy_medhub(medhub_context_t *ctx) {
     if (ctx->re_sampler) {
         switch_resample_destroy(&ctx->re_sampler);
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: switch_resample_destroy\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: switch_resample_destroy\n",
                               medhub_ctx->sessionid);
         }
     }
     switch_mutex_destroy(ctx->mutex);
-    if (medhub_globals->_debug) {
-        switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: switch_mutex_destroy\n",
-                          medhub_ctx->sessionid);
-    }
+    switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: destroy_medhub: switch_mutex_destroy\n",
+                      medhub_ctx->sessionid);
 }
 
 static switch_status_t medhub_cleanup_on_channel_destroy(switch_core_session_t *session) {
@@ -1894,11 +1895,18 @@ static void on_record_start(switch_event_t *event) {
         return;
     }
 
-    switch_mutex_lock(ctx->mutex);
-    // update record_start_timestamp value both local and remote
-    ctx->record_start_timestamp = switch_core_session_strdup(session, record_start_timestamp);
-    ctx->client->send_record_start_event(record_start_timestamp);
-    switch_mutex_unlock(ctx->mutex);
+    if (switch_atomic_read(&ctx->asr_stopped) == 1) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[%s]: on_record_start: ctx->asr_stopped\n",
+                          ctx->sessionid);
+    } else {
+        switch_mutex_lock(ctx->mutex);
+        // update record_start_timestamp value both local and remote
+        ctx->record_start_timestamp = switch_core_session_strdup(session, record_start_timestamp);
+        if (ctx->client) {
+            ctx->client->send_record_start_event(record_start_timestamp);
+        }
+        switch_mutex_unlock(ctx->mutex);
+    }
     switch_core_session_rwunlock(session);
 }
 
@@ -2000,9 +2008,16 @@ static void notify_playback_stop(const char *session_uuid, const char *playback_
         return;
     }
 
-    switch_mutex_lock(ctx->mutex);
-    ctx->client->send_playback_stop_event(playback_id);
-    switch_mutex_unlock(ctx->mutex);
+    if (switch_atomic_read(&ctx->asr_stopped) == 1) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[%s]: notify_playback_stop: ctx->asr_stopped\n",
+                          ctx->sessionid);
+    } else {
+        switch_mutex_lock(ctx->mutex);
+        if (ctx->client) {
+            ctx->client->send_playback_stop_event(playback_id);
+        }
+        switch_mutex_unlock(ctx->mutex);
+    }
     switch_core_session_rwunlock(session);
 }
 
