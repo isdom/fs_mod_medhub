@@ -455,35 +455,35 @@ public:
         return 0;
     }
 
-    void send_playback_stopped_event(const char *playback_id) {
+    void send_playback_started_event(const char *playback_id) {
         if (medhub_globals->_debug) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "[%s]: send playback stopped event\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "[%s]: send playback started event\n",
                               _medhub_ctx->sessionid);
         }
 
         if (!is_playback_connected()) {
-            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send_playback_stopped_event failed for playback_not_connected!\n",
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send_playback_started_event failed for playback_not_connected!\n",
                               _medhub_ctx->sessionid);
             return;
         }
 
         nlohmann::json json_event = {
                 {"header", {
-                        // 当次消息请求ID，随机生成32位唯一ID。
-                        //{"message_id", message_id},
-                        // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
-                        //{"task_id", m_task_id},
-                        //{"namespace", "FlowingSpeechSynthesizer"},
-                        {"name", "FSPlaybackStopped"}
-                        //{"appkey", m_appkey}
-                }} ,
+                                   // 当次消息请求ID，随机生成32位唯一ID。
+                                   //{"message_id", message_id},
+                                   // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                                   //{"task_id", m_task_id},
+                                   //{"namespace", "FlowingSpeechSynthesizer"},
+                                   {"name", "FSPlaybackStarted"}
+                                   //{"appkey", m_appkey}
+                           }} ,
                 {"payload", {
-                        {"playback_id", playback_id}
-                }}
+                                   {"playback_id", playback_id}
+                           }}
         };
 
         const std::string str_event = json_event.dump();
-        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: send_playback_stopped_event: detail: %s\n",
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: send_playback_started_event: detail: %s\n",
                           _medhub_ctx->sessionid, str_event.c_str());
 
         websocketpp::lib::error_code ec;
@@ -574,6 +574,50 @@ public:
 
         const std::string str_event = json_event.dump();
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: send_playback_resumed_event: detail: %s\n",
+                          _medhub_ctx->sessionid, str_event.c_str());
+
+        websocketpp::lib::error_code ec;
+        m_playback.send(m_playback_hdl, str_event, websocketpp::frame::opcode::text, ec);
+        if (ec) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_ERROR, "[%s] medhub send event msg failed: %s\n",
+                              _medhub_ctx->sessionid, ec.message().c_str());
+        } else {
+            if (medhub_globals->_debug) {
+                switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "[%s] medhub send event msg success\n",
+                                  _medhub_ctx->sessionid);
+            }
+        }
+    }
+
+    void send_playback_stopped_event(const char *playback_id) {
+        if (medhub_globals->_debug) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_DEBUG, "[%s]: send playback stopped event\n",
+                              _medhub_ctx->sessionid);
+        }
+
+        if (!is_playback_connected()) {
+            switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "[%s]: send_playback_stopped_event failed for playback_not_connected!\n",
+                              _medhub_ctx->sessionid);
+            return;
+        }
+
+        nlohmann::json json_event = {
+                {"header", {
+                                   // 当次消息请求ID，随机生成32位唯一ID。
+                                   //{"message_id", message_id},
+                                   // 整个实时语音合成的会话ID，整个请求中需要保持一致，32位唯一ID。
+                                   //{"task_id", m_task_id},
+                                   //{"namespace", "FlowingSpeechSynthesizer"},
+                                   {"name", "FSPlaybackStopped"}
+                                   //{"appkey", m_appkey}
+                           }} ,
+                {"payload", {
+                                   {"playback_id", playback_id}
+                           }}
+        };
+
+        const std::string str_event = json_event.dump();
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "[%s]: send_playback_stopped_event: detail: %s\n",
                           _medhub_ctx->sessionid, str_event.c_str());
 
         websocketpp::lib::error_code ec;
@@ -2002,15 +2046,53 @@ static void on_record_start(switch_event_t *event) {
     switch_core_session_rwunlock(session);
 }
 
+static void notify_playback_start(const char *session_uuid, const char *playback_id) {
+    switch_core_session *session  = switch_core_session_force_locate(session_uuid);
+    if (!session) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "notify_playback_start: locate session [%s] failed, maybe ended\n",
+                          session_uuid);
+        return;
+    }
+
+    auto *ctx = (medhub_context_t *)switch_channel_get_private(switch_core_session_get_channel(session), MEDHUB_CTX_NAME);
+    if (!ctx) {
+        switch_core_session_rwunlock(session);
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING, "notify_playback_start: can't found medhub ctx by %s\n", session_uuid);
+        return;
+    }
+
+    if (switch_atomic_read(&ctx->asr_stopped) == 1) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "[%s]: notify_playback_start: ctx->asr_stopped\n",
+                          ctx->sessionid);
+    } else {
+        switch_mutex_lock(ctx->mutex);
+        if (ctx->client) {
+            ctx->client->send_playback_started_event(playback_id);
+        }
+        switch_mutex_unlock(ctx->mutex);
+    }
+    switch_core_session_rwunlock(session);
+}
+
 static void on_playback_start(switch_event_t *event) {
     // dump_event(event);
     switch_event_header_t *hdr;
     const char *uuid, *playback_file_path = nullptr, *event_timestamp = nullptr, *start_timestamp = nullptr, *content_id = nullptr;
+    const char *playback_id = nullptr;
 
     hdr = switch_event_get_header_ptr(event, "Unique-ID");
     uuid = hdr->value;
     if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CONSOLE, "on_playback_start: session[%s]", uuid);
+    }
+
+    hdr = switch_event_get_header_ptr(event, "vars_playback_id");
+    if (hdr) {
+        playback_id = hdr->value;
+    }
+
+    if (uuid && playback_id) {
+        notify_playback_start(uuid, playback_id);
     }
 
     hdr = switch_event_get_header_ptr(event, "Playback-File-Path");
