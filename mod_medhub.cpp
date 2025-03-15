@@ -373,6 +373,7 @@ public:
         con->append_header("x-sessionid", sessionid);
         con->append_header("x-welcome", welcome);
         con->append_header("x-rst", record_start_timestamp);
+        con->append_header("x-timestamp", std::to_string(switch_time_now()));
 
         // Queue the connection. No DNS queries or network connections will be
         // made until the io_service event loop is run.
@@ -398,6 +399,7 @@ public:
         m_playback_hdl = con->get_handle();
         con->append_header("x-role", "playback");
         con->append_header("x-sessionid", _sessionid);
+        con->append_header("x-timestamp", std::to_string(switch_time_now()));
 
         // Queue the connection. No DNS queries or network connections will be
         // made until the io_service event loop is run.
@@ -3040,10 +3042,10 @@ static void on_fs_pause_playback(medhub_context_t *ctx, const nlohmann::json &hu
     const std::string uuid = hub_event["payload"]["uuid"];
     const std::string playback_id = hub_event["payload"]["playback_id"];
 
-    if (medhub_globals->_debug) {
+    //if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_fs_pause_playback: uuid[%s], playback_id[%s]\n",
                           uuid.c_str(), playback_id.c_str());
-    }
+    //}
 
     switch_core_session_t *session = switch_core_session_force_locate(uuid.c_str());
     if (!session) {
@@ -3065,10 +3067,10 @@ static void on_fs_resume_playback(medhub_context_t *ctx, const nlohmann::json &h
     const std::string uuid = hub_event["payload"]["uuid"];
     const std::string playback_id = hub_event["payload"]["playback_id"];
 
-    if (medhub_globals->_debug) {
+    //if (medhub_globals->_debug) {
         switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_INFO, "on_fs_resume_playback: uuid[%s], playback_id[%s]\n",
                           uuid.c_str(), playback_id.c_str());
-    }
+    //}
 
     switch_core_session_t *session = switch_core_session_force_locate(uuid.c_str());
     if (!session) {
